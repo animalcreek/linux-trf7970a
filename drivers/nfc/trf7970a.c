@@ -450,6 +450,7 @@ struct trf7970a {
 	bool				issue_eof;
 	struct gpio_desc		*en_gpiod;
 	struct gpio_desc		*en2_gpiod;
+	struct gpio_desc		*ss_gpiod;
 	struct mutex			lock;
 	unsigned int			timeout;
 	bool				ignore_timeout;
@@ -461,9 +462,11 @@ static int trf7970a_cmd(struct trf7970a *trf, u8 opcode)
 	u8 cmd = TRF7970A_CMD_BIT_CTRL | TRF7970A_CMD_BIT_OPCODE(opcode);
 	int ret;
 
+	gpiod_set_value_cansleep(trf->ss_gpiod, 0);
 	dev_dbg(trf->dev, "cmd: 0x%x\n", cmd);
 
 	ret = spi_write(trf->spi, &cmd, 1);
+	gpiod_set_value_cansleep(trf->ss_gpiod, 1);
 	if (ret)
 		dev_err(trf->dev, "%s - cmd: 0x%x, ret: %d\n", __func__, cmd,
 			ret);
@@ -475,7 +478,9 @@ static int trf7970a_read(struct trf7970a *trf, u8 reg, u8 *val)
 	u8 addr = TRF7970A_CMD_BIT_RW | reg;
 	int ret;
 
+	gpiod_set_value_cansleep(trf->ss_gpiod, 0);
 	ret = spi_write_then_read(trf->spi, &addr, 1, val, 1);
+	gpiod_set_value_cansleep(trf->ss_gpiod, 1);
 	if (ret)
 		dev_err(trf->dev, "%s - addr: 0x%x, ret: %d\n", __func__, addr,
 			ret);
@@ -493,6 +498,7 @@ static int trf7970a_read_cont(struct trf7970a *trf, u8 reg, u8 *buf,
 	struct spi_message m;
 	int ret;
 
+	gpiod_set_value_cansleep(trf->ss_gpiod, 0);
 	dev_dbg(trf->dev, "read_cont(0x%x, %zd)\n", addr, len);
 
 	spi_message_init(&m);
@@ -508,6 +514,7 @@ static int trf7970a_read_cont(struct trf7970a *trf, u8 reg, u8 *buf,
 	spi_message_add_tail(&t[1], &m);
 
 	ret = spi_sync(trf->spi, &m);
+	gpiod_set_value_cansleep(trf->ss_gpiod, 1);
 	if (ret)
 		dev_err(trf->dev, "%s - addr: 0x%x, ret: %d\n", __func__, addr,
 			ret);
@@ -519,9 +526,11 @@ static int trf7970a_write(struct trf7970a *trf, u8 reg, u8 val)
 	u8 buf[2] = { reg, val };
 	int ret;
 
+	gpiod_set_value_cansleep(trf->ss_gpiod, 0);
 	dev_dbg(trf->dev, "write(0x%x): 0x%x\n", reg, val);
 
 	ret = spi_write(trf->spi, buf, 2);
+	gpiod_set_value_cansleep(trf->ss_gpiod, 1);
 	if (ret)
 		dev_err(trf->dev, "%s - write: 0x%x 0x%x, ret: %d\n", __func__,
 			buf[0], buf[1], ret);
@@ -535,6 +544,7 @@ static int trf7970a_read_irqstatus(struct trf7970a *trf, u8 *status)
 	u8 buf[2];
 	u8 addr;
 
+	gpiod_set_value_cansleep(trf->ss_gpiod, 0);
 	addr = TRF7970A_IRQ_STATUS | TRF7970A_CMD_BIT_RW;
 
 	if (trf->quirks & TRF7970A_QUIRK_IRQ_STATUS_READ) {
@@ -544,6 +554,7 @@ static int trf7970a_read_irqstatus(struct trf7970a *trf, u8 *status)
 		ret = spi_write_then_read(trf->spi, &addr, 1, buf, 1);
 	}
 
+	gpiod_set_value_cansleep(trf->ss_gpiod, 1);
 	if (ret)
 		dev_err(trf->dev, "%s - irqstatus: Status read failed: %d\n",
 			__func__, ret);
@@ -559,6 +570,7 @@ static int trf7970a_read_target_proto(struct trf7970a *trf, u8 *target_proto)
 	u8 buf[2];
 	u8 addr;
 
+	gpiod_set_value_cansleep(trf->ss_gpiod, 0);
 	addr = TRF79070A_NFC_TARGET_PROTOCOL | TRF7970A_CMD_BIT_RW |
 	       TRF7970A_CMD_BIT_CONTINUOUS;
 
@@ -569,6 +581,7 @@ static int trf7970a_read_target_proto(struct trf7970a *trf, u8 *target_proto)
 	else
 		*target_proto = buf[0];
 
+	gpiod_set_value_cansleep(trf->ss_gpiod, 0);
 	return ret;
 }
 
@@ -657,6 +670,7 @@ static int trf7970a_transmit(struct trf7970a *trf, struct sk_buff *skb,
 	print_hex_dump_debug("trf7970a tx data: ", DUMP_PREFIX_NONE,
 			     16, 1, skb->data, len, false);
 
+	gpiod_set_value_cansleep(trf->ss_gpiod, 0);
 	spi_message_init(&m);
 
 	memset(&t, 0, sizeof(t));
@@ -673,7 +687,7 @@ static int trf7970a_transmit(struct trf7970a *trf, struct sk_buff *skb,
 	if (ret) {
 		dev_err(trf->dev, "%s - Can't send tx data: %d\n", __func__,
 			ret);
-		return ret;
+		goto out_err;
 	}
 
 	skb_pull(skb, len);
@@ -700,7 +714,9 @@ static int trf7970a_transmit(struct trf7970a *trf, struct sk_buff *skb,
 
 	schedule_delayed_work(&trf->timeout_work, msecs_to_jiffies(timeout));
 
-	return 0;
+out_err:
+	gpiod_set_value_cansleep(trf->ss_gpiod, 1);
+	return ret;
 }
 
 static void trf7970a_fill_fifo(struct trf7970a *trf)
@@ -2054,6 +2070,13 @@ static int trf7970a_probe(struct spi_device *spi)
 		dev_dbg(trf->dev, "trf7970a configured for 27MHz crystal\n");
 	} else {
 		trf->modulator_sys_clk_ctrl = 0;
+	}
+
+	trf->ss_gpiod = devm_gpiod_get_index(trf->dev, "ti,ss-gpio", 0,
+					     GPIOD_OUT_HIGH);
+	if (IS_ERR(trf->ss_gpiod)) {
+		dev_err(trf->dev, "No SS GPIO property\n");
+		return PTR_ERR(trf->ss_gpiod);
 	}
 
 	ret = devm_request_threaded_irq(trf->dev, spi->irq, NULL,

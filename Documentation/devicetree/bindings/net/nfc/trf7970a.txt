@@ -7,6 +7,7 @@ Required properties:
 - interrupts: A single interrupt specifier.
 - ti,enable-gpios: One or two GPIO entries used for 'EN' and 'EN2' pins on the
   TRF7970A. EN2 is optional.
+- ti,ss-gpio: GPIO entry used for active low SS (spi slave select) on the TRF7970A
 - vin-supply: Regulator for supply voltage to VIN pin
 
 Optional SoC Specific Properties:
@@ -35,6 +36,7 @@ Example (for ARM-based BeagleBone with TRF7970A on SPI1):
 		interrupts = <14 0>;
 		ti,enable-gpios = <&gpio2 2 GPIO_ACTIVE_LOW>,
 				  <&gpio2 5 GPIO_ACTIVE_LOW>;
+		ti,ss-gpio = <&gpio2 4 GPIO_ACTIVE_HIGH>;
 		vin-supply = <&ldo3_reg>;
 		vdd-io-supply = <&ldo2_reg>;
 		autosuspend-delay = <30000>;
