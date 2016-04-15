@@ -15,7 +15,7 @@
 #include <linux/module.h>
 #include <crypto/xts.h>
 
-#include "aes_glue.h"
+#include <asm/aes_glue.h>
 
 #define BIT_SLICED_KEY_MAXSIZE	(128 * (AES_MAXNR - 1) + 2 * AES_BLOCK_SIZE)
 
