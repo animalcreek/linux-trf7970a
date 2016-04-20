@@ -1899,6 +1899,8 @@ static int trf7970a_power_up(struct trf7970a *trf)
 
 	dev_dbg(trf->dev, "Powering up - state: %d\n", trf->state);
 
+	gpiod_set_value_cansleep(trf->ss_gpiod, 1);
+
 	if (trf->state != TRF7970A_ST_PWR_OFF)
 		return 0;
 
