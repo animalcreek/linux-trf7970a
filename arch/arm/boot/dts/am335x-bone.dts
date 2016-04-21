@@ -28,3 +28,69 @@
 &sgx {
 	status = "okay";
 };
+
+&am33xx_pinmux {
+	trf7970a_default: trf7970a_pins {
+		pinctrl-single,pins = <
+			/* GPIOs for EM1 Connector on RF Cape (over enet) */
+			/* gpio1_30 (SS Enable (EM1_SPI_ENA on RF Cape)) */
+			0x80 (PIN_OUTPUT_PULLUP | MUX_MODE7)
+			/* gpio2_2 (EN) */
+			0x90 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)
+			/* gpio2_5 (EN2) */
+			0x9c (PIN_OUTPUT_PULLDOWN | MUX_MODE7)
+			/* gpio2_14 (IRQ) */
+			0xc0 (PIN_INPUT		  | MUX_MODE7)
+
+			/* GPIOs for EM2 Connector on RF Cape (over USB) */
+			/* gpio1_5 (SS Enable (EM2_SPI_ENA on RF Cape)) */
+			0x14 (PIN_OUTPUT_PULLUP | MUX_MODE7)
+			/* gpio2_3 (EN) */
+			0x94 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)
+			/* gpio2_4 (EN2) */
+			0x98 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)
+			/* gpio0_31 (IRQ) */
+			0x74 (PIN_INPUT           | MUX_MODE7)
+
+			/* SPI lines are made common on the RF Cape */
+			0x190 (PIN_INPUT_PULLDOWN | MUX_MODE3) /* spi1_sclk */
+			0x194 (PIN_INPUT_PULLUP   | MUX_MODE3) /* spi1_miso */
+			0x198 (PIN_INPUT_PULLDOWN | MUX_MODE3) /* spi1_mosi */
+			0x19c (PIN_INPUT_PULLUP   | MUX_MODE3) /* spi1_cs0 */
+		>;
+	};
+};
+
+&spi1 {
+	status = "okay";
+
+	trf7970a@0 {
+		compatible = "ti,trf7970a";
+		reg = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&trf7970a_default>;
+		spi-max-frequency = <2000000>;
+
+		/* EM1 RF Cape Connector (over enet) */
+		/*
+		interrupt-parent = <&gpio2>;
+		interrupts = <14 0>;
+		ti,enable-gpios = <&gpio2 2 GPIO_ACTIVE_LOW>,
+				  <&gpio2 5 GPIO_ACTIVE_LOW>;
+		*/
+
+		/* EM2 RF Cape Connector (over USB) */
+		interrupt-parent = <&gpio0>;
+		interrupts = <31 0>;
+		ti,enable-gpios = <&gpio2 3 GPIO_ACTIVE_LOW>,
+				  <&gpio2 4 GPIO_ACTIVE_LOW>;
+
+		vin-supply = <&ldo3_reg>;
+		vin-voltage-override = <5000000>;
+		autosuspend-delay = <30000>;
+		irq-status-read-quirk;
+		en2-rf-quirk;
+		t5t-rmb-extra-byte-quirk;
+		status = "okay";
+	};
+};
