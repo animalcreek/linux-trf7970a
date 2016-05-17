@@ -1069,6 +1069,7 @@ static int trf7970a_init(struct trf7970a *trf)
 	usleep_range(1000, 2000);
 
 	trf->chip_status_ctrl &= ~TRF7970A_CHIP_STATUS_RF_ON;
+	trf->chip_status_ctrl |= TRF7970A_CHIP_STATUS_PM_ON;  /* swap rx in1 and in2 */
 
 	ret = trf7970a_write(trf, TRF7970A_MODULATOR_SYS_CLK_CTRL,
 			     trf->modulator_sys_clk_ctrl);
@@ -2007,6 +2008,35 @@ static int trf7970a_get_autosuspend_delay(struct device_node *np)
 	return autosuspend_delay;
 }
 
+static ssize_t trf7970a_rssi_status_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct trf7970a *trf = dev_get_drvdata(dev);
+	u8 rssi;
+	int ret;
+
+	ret = trf7970a_read(trf, TRF7970A_RSSI_OSC_STATUS, &rssi);
+
+	if (ret) {
+			sprintf(buf, "fail");
+			return -EINVAL;
+		}
+
+	if (trf->chip_status_ctrl & TRF7970A_CHIP_STATUS_PM_ON)
+		return sprintf(buf, "OSC:%d, *IN2:%d, IN1:%d\n",
+			(int)((rssi&(u8)TRF7970A_RSSI_OSC_STATUS_RSSI_OSC_OK)>>6),
+			(int)(rssi&(u8)TRF7970A_RSSI_OSC_STATUS_RSSI_MASK),
+			(int)((rssi&(u8)TRF7970A_RSSI_OSC_STATUS_RSSI_X_MASK)>>3));
+	else
+		return sprintf(buf, "OSC:%d, IN2:%d, *IN1:%d\n",
+			(int)((rssi&(u8)TRF7970A_RSSI_OSC_STATUS_RSSI_OSC_OK)>>6),
+			(int)((rssi&(u8)TRF7970A_RSSI_OSC_STATUS_RSSI_X_MASK)>>3),
+			(int)(rssi&(u8)TRF7970A_RSSI_OSC_STATUS_RSSI_MASK));
+
+}
+
+static DEVICE_ATTR(rssi, S_IRUGO, trf7970a_rssi_status_show, NULL);
+
 static int trf7970a_probe(struct spi_device *spi)
 {
 	struct device_node *np = spi->dev.of_node;
@@ -2148,6 +2178,11 @@ static int trf7970a_probe(struct spi_device *spi)
 	pm_runtime_set_autosuspend_delay(trf->dev, autosuspend_delay);
 	pm_runtime_use_autosuspend(trf->dev);
 
+	/* Create sysfs entry */
+	ret = device_create_file(trf->dev, &dev_attr_rssi);
+	if (ret < 0)
+		dev_err(trf->dev, "failed to add rssi sysfs file\n");
+
 	ret = trf7970a_startup(trf);
 	if (ret)
 		goto err_free_ddev;
@@ -2181,6 +2216,8 @@ static int trf7970a_remove(struct spi_device *spi)
 	trf7970a_shutdown(trf);
 
 	mutex_unlock(&trf->lock);
+
+	device_remove_file(trf->dev, &dev_attr_rssi);
 
 	nfc_digital_unregister_device(trf->ddev);
 	nfc_digital_free_device(trf->ddev);
