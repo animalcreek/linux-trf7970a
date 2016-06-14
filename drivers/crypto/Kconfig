@@ -338,6 +338,15 @@ config CRYPTO_DEV_OMAP_DES
 	  the ECB and CBC modes of operation are supported by the driver. Also
 	  accesses made on unaligned boundaries are supported.
 
+config CRYPTO_DEV_KEYSTONE
+	tristate "Support for TI Keystone security accelerator"
+	depends on ARCH_KEYSTONE && KEYSTONE_NAVIGATOR_DMA && KEYSTONE_NAVIGATOR_QMSS
+	default m if ARCH_KEYSTONE
+	help
+	  Keystone devices include a security accelerator engine that may be
+	  used for crypto offload.  Select this if you want to use hardware
+	  acceleration for cryptographic algorithms on these devices.
+
 config CRYPTO_DEV_PICOXCELL
 	tristate "Support for picoXcell IPSEC and Layer2 crypto engines"
 	depends on ARCH_PICOXCELL && HAVE_CLK
