@@ -341,6 +341,9 @@ config CRYPTO_DEV_OMAP_DES
 config CRYPTO_DEV_KEYSTONE
 	tristate "Support for TI Keystone security accelerator"
 	depends on ARCH_KEYSTONE && KEYSTONE_NAVIGATOR_DMA && KEYSTONE_NAVIGATOR_QMSS
+	select ARM_CRYPTO
+	select CRYPTO_AES
+	select CRYPTO_AES_ARM
 	default m if ARCH_KEYSTONE
 	help
 	  Keystone devices include a security accelerator engine that may be

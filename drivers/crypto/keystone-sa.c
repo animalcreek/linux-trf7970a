@@ -29,6 +29,7 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/dma-mapping.h>
+#include <linux/firmware.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
@@ -577,6 +578,23 @@ static int keystone_crypto_remove(struct platform_device *pdev)
 	return ret;
 }
 
+static int sa_request_firmware(struct device *dev)
+{
+	const struct firmware *fw;
+	int	ret;
+
+	ret = request_firmware(&fw, "sa_mci.fw", dev);
+	if (ret < 0) {
+		dev_err(dev, "request_firmware failed\n");
+		return ret;
+	}
+
+	memcpy(&sa_mci_tbl, fw->data, fw->size);
+
+	release_firmware(fw);
+	return 0;
+}
+
 static int keystone_crypto_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -633,6 +651,10 @@ static int keystone_crypto_probe(struct platform_device *pdev)
 		dev_err(dev, "Failed to set DMA channels");
 		goto err_3;
 	}
+
+	ret = sa_request_firmware(dev);
+	if (ret < 0)
+		goto err_3;
 
 	platform_set_drvdata(pdev, dev_data);
 
