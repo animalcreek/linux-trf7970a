@@ -22,11 +22,40 @@
 #include <linux/interrupt.h>
 #include <linux/soc/ti/knav_dma.h>
 #include <linux/regmap.h>
+#include <linux/skbuff.h>
 #include <asm/aes_glue.h>
 #include <crypto/aes.h>
+
+#define AES_XCBC_DIGEST_SIZE	16
+
+/* Number of 32 bit words in EPIB  */
+#define SA_DMA_NUM_EPIB_WORDS	4
+
 /* Number of 32 bit words in PS data  */
 #define SA_DMA_NUM_PS_WORDS	16
 
+/*
+ * Maximum number of simultaeneous security contexts
+ * supported by the driver
+ */
+#define SA_MAX_NUM_CTX	512
+
+/*
+ * Encoding used to identify the typo of crypto operation
+ * performed on the packet when the packet is returned
+ * by SA
+ */
+#define SA_REQ_SUBTYPE_ENC	0x0001
+#define SA_REQ_SUBTYPE_DEC	0x0002
+#define SA_REQ_SUBTYPE_SHIFT	16
+#define SA_REQ_SUBTYPE_MASK	0xffff
+
+/*
+ * Maximum size of authentication tag
+ * NOTE: update this macro as we start supporting
+ * algorithms with bigger digest size
+ */
+#define SA_MAX_AUTH_TAG_SZ SHA1_DIGEST_SIZE
 
 #define SA_RX_BUF0_SIZE 1500
 
@@ -67,12 +96,34 @@ struct keystone_crypto_data {
 	u32		tx_pool_region_id;
 	void		*tx_pool;
 
+	spinlock_t	scid_lock; /* lock for SC-ID allocation */
+
+	int		stats_fl;
+
 	/* Security context data */
 	u16		sc_id_start;
 	u16		sc_id_end;
 	u16		sc_id;
+
+	/* Bitmap to keep track of Security context ID's */
+	unsigned long	ctx_bm[DIV_ROUND_UP(SA_MAX_NUM_CTX,
+				BITS_PER_LONG)];
 	atomic_t	rx_dma_page_cnt; /* N buf from 2nd pool available */
 	atomic_t	tx_dma_desc_cnt; /* Tx DMA desc-s available */
+};
+
+/* Packet structure used in Rx */
+#define SA_SGLIST_SIZE	MAX_SKB_FRAGS
+struct sa_packet {
+	struct scatterlist		 sg[SA_SGLIST_SIZE];
+	int				 sg_ents;
+	struct keystone_crypto_data	*priv;
+	struct dma_chan			*chan;
+	struct dma_async_tx_descriptor	*desc;
+	u32				 epib[SA_DMA_NUM_EPIB_WORDS];
+	u32				 psdata[SA_DMA_NUM_PS_WORDS];
+	struct completion		 complete;
+	void				*data;
 };
 
 /* Command label updation info */
@@ -121,9 +172,34 @@ enum sa_submode {
 /* Maximum size of Command label in 32 words */
 #define SA_MAX_CMDL_WORDS (SA_DMA_NUM_PS_WORDS - SA_PSDATA_CTX_WORDS)
 
+struct sa_ctx_info {
+	u8		*sc;
+	dma_addr_t	sc_phys;
+	u16		sc_id;
+	u16		cmdl_size;
+	u32		cmdl[SA_MAX_CMDL_WORDS];
+	struct sa_cmdl_upd_info cmdl_upd_info;
+	/* Store Auxiliary data such as K2/K3 subkeys in AES-XCBC */
+	u32		epib[SA_DMA_NUM_EPIB_WORDS];
+	u32		rx_flow;
+	u32		rx_compl_qid;
+};
+
+struct sa_tfm_ctx {
+	struct keystone_crypto_data *dev_data;
+	struct sa_ctx_info enc;
+	struct sa_ctx_info dec;
+	struct sa_ctx_info auth;
+};
+
 /* Tx DMA callback param */
 struct sa_dma_req_ctx {
 	struct keystone_crypto_data *dev_data;
+	u32		cmdl[SA_MAX_CMDL_WORDS + SA_PSDATA_CTX_WORDS];
+	struct scatterlist *src;
+	unsigned int	src_nents;
+	struct dma_chan *tx_chan;
+	bool		pkt;
 };
 
 /* Encryption algorithms */
@@ -188,6 +264,15 @@ struct sa_eng_info {
 };
 
 void sa_set_sc_auth(u16 alg_id, const u8 *key, u16 key_sz, u8 *sc_buf);
+
+#define DMA_HAS_PSINFO		BIT(31)
+#define DMA_HAS_EPIB		BIT(30)
+
+void sa_register_algos(const struct device *dev);
+void sa_unregister_algos(const struct device *dev);
+void sa_tx_completion_process(struct keystone_crypto_data *dev_data);
+void sa_rx_completion_process(struct keystone_crypto_data *dev_data);
+
 int sa_set_sc_enc(u16 alg_id, const u8 *key, u16 key_sz,
 		  u16 aad_len, u8 enc, u8 *sc_buf);
 
