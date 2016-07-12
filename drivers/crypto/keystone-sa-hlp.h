@@ -24,6 +24,9 @@
 #include <linux/regmap.h>
 #include <asm/aes_glue.h>
 #include <crypto/aes.h>
+/* Number of 32 bit words in PS data  */
+#define SA_DMA_NUM_PS_WORDS	16
+
 
 #define SA_RX_BUF0_SIZE 1500
 
@@ -71,6 +74,52 @@ struct keystone_crypto_data {
 	atomic_t	rx_dma_page_cnt; /* N buf from 2nd pool available */
 	atomic_t	tx_dma_desc_cnt; /* Tx DMA desc-s available */
 };
+
+/* Command label updation info */
+struct sa_cmdl_param_info {
+	u16	index;
+	u16	offset;
+	u16	size;
+};
+
+/* Maximum length of Auxiliary data in 32bit words */
+#define SA_MAX_AUX_DATA_WORDS	8
+
+struct sa_cmdl_upd_info {
+	u16	flags;
+	u16	submode;
+	struct sa_cmdl_param_info	enc_size;
+	struct sa_cmdl_param_info	enc_size2;
+	struct sa_cmdl_param_info	enc_offset;
+	struct sa_cmdl_param_info	enc_iv;
+	struct sa_cmdl_param_info	enc_iv2;
+	struct sa_cmdl_param_info	aad;
+	struct sa_cmdl_param_info	payload;
+	struct sa_cmdl_param_info	auth_size;
+	struct sa_cmdl_param_info	auth_size2;
+	struct sa_cmdl_param_info	auth_offset;
+	struct sa_cmdl_param_info	auth_iv;
+	struct sa_cmdl_param_info	aux_key_info;
+	u32				aux_key[SA_MAX_AUX_DATA_WORDS];
+};
+
+enum sa_submode {
+	SA_MODE_GEN = 0,
+	SA_MODE_CCM,
+	SA_MODE_GCM,
+	SA_MODE_GMAC
+};
+
+/*
+ * Number of 32bit words appended after the command label
+ * in PSDATA to identify the crypto request context.
+ * word-0: Request type
+ * word-1: pointer to request
+ */
+#define SA_PSDATA_CTX_WORDS 4
+
+/* Maximum size of Command label in 32 words */
+#define SA_MAX_CMDL_WORDS (SA_DMA_NUM_PS_WORDS - SA_PSDATA_CTX_WORDS)
 
 /* Tx DMA callback param */
 struct sa_dma_req_ctx {
