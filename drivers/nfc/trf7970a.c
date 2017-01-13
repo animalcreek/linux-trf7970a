@@ -1916,7 +1916,8 @@ static int trf7970a_power_down(struct trf7970a *trf)
 
 	gpio_set_value(trf->en_gpio, 0);
 
-	if (gpio_is_valid(trf->en2_gpio))
+	if (gpio_is_valid(trf->en2_gpio) &&
+	    !(trf->quirks & TRF7970A_QUIRK_EN2_MUST_STAY_LOW))
 		gpio_set_value(trf->en2_gpio, 0);
 
 	ret = regulator_disable(trf->regulator);
