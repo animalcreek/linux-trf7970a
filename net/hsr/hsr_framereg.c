@@ -22,20 +22,6 @@
 #include "hsr_framereg.h"
 #include "hsr_netlink.h"
 
-
-struct hsr_node {
-	struct list_head	mac_list;
-	unsigned char		MacAddressA[ETH_ALEN];
-	unsigned char		MacAddressB[ETH_ALEN];
-	/* Local slave through which AddrB frames are received from this node */
-	enum hsr_port_type	AddrB_port;
-	unsigned long		time_in[HSR_PT_PORTS];
-	bool			time_in_stale[HSR_PT_PORTS];
-	u16			seq_out[HSR_PT_PORTS];
-	struct rcu_head		rcu_head;
-};
-
-
 /*	TODO: use hash lists for mac addresses (linux/jhash.h)?    */
 
 
