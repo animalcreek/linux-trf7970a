@@ -169,6 +169,8 @@ struct hsr_priv {
 	struct list_head	self_node_db;	/* MACs of slaves */
 	struct timer_list	announce_timer;	/* Supervision frame dispatch */
 	struct timer_list	prune_timer;
+	bool			rx_offloaded;	/* lre handle in hw */
+	bool			l2_fwd_offloaded; /* L2 forward in hw */
 	int announce_count;
 	u16 sequence_nr;
 	u16 sup_sequence_nr;			/* For HSRv1 separate seq_nr for supervision */
