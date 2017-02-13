@@ -465,7 +465,9 @@ int hsr_dev_finalize(struct net_device *hsr_dev, struct net_device *slave[2],
 
 	setup_timer(&hsr->announce_timer, hsr_announce, (unsigned long)hsr);
 
-	setup_timer(&hsr->prune_timer, hsr_prune_nodes, (unsigned long)hsr);
+	if (!hsr->rx_offloaded)
+		setup_timer(&hsr->prune_timer, hsr_prune_nodes,
+			    (unsigned long)hsr);
 
 	ether_addr_copy(hsr->sup_multicast_addr, def_multicast_addr);
 	hsr->sup_multicast_addr[ETH_ALEN - 1] = multicast_spec;
@@ -489,6 +491,16 @@ int hsr_dev_finalize(struct net_device *hsr_dev, struct net_device *slave[2],
 	if (res)
 		return res;
 
+	/* HSR LRE Rx offload supported in lower device? */
+	if ((slave[0]->features & NETIF_F_HW_HSR_RX_OFFLOAD) &&
+	    (slave[1]->features & NETIF_F_HW_HSR_RX_OFFLOAD))
+		hsr->rx_offloaded = true;
+
+	/* HSR LRE L2 forward offload supported in lower device? */
+	if ((slave[0]->features & NETIF_F_HW_L2FW_DOFFLOAD) &&
+	    (slave[1]->features & NETIF_F_HW_L2FW_DOFFLOAD))
+		hsr->l2_fwd_offloaded = true;
+
 	res = register_netdevice(hsr_dev);
 	if (res)
 		goto fail;
@@ -500,7 +512,20 @@ int hsr_dev_finalize(struct net_device *hsr_dev, struct net_device *slave[2],
 	if (res)
 		goto fail;
 
-	mod_timer(&hsr->prune_timer, jiffies + msecs_to_jiffies(PRUNE_PERIOD));
+	/* For LRE rx offload, pruning is expected to happen
+	 * at the hardware or firmware . So don't do this in software
+	 */
+	if (!hsr->rx_offloaded)
+		mod_timer(&hsr->prune_timer,
+			  jiffies + msecs_to_jiffies(PRUNE_PERIOD));
+	/* for offloaded case, expect both slaves have the
+	 * same MAC address configured. If not fail.
+	 */
+	if (hsr->rx_offloaded &&
+	    !ether_addr_equal(slave[0]->dev_addr,
+			      slave[1]->dev_addr))
+		goto fail;
+
 	res = hsr_prp_debugfs_init(hsr);
 	if (res)
 		goto fail;
