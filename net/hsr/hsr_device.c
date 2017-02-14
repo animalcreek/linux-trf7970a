@@ -241,6 +241,8 @@ static int hsr_dev_xmit(struct sk_buff *skb, struct net_device *dev)
 	master = hsr_port_get_hsr(hsr, HSR_PT_MASTER);
 	skb->dev = master->dev;
 	hsr_forward_skb(skb, master);
+	master->dev->stats.tx_packets++;
+	master->dev->stats.tx_bytes += skb->len;
 
 	return NETDEV_TX_OK;
 }
