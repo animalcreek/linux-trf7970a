@@ -41,14 +41,14 @@ hsr_prp_node_table_show (struct seq_file *sfp, void *data)
 	rcu_read_lock();
 	list_for_each_entry_rcu(node, &priv->node_db, mac_list) {
 		/* skip self node */
-		if (hsr_addr_is_self(priv, node->MacAddressA))
+		if (hsr_addr_is_self(priv, node->mac_address_a))
 			continue;
-		print_mac_address(sfp, &node->MacAddressA[0]);
+		print_mac_address(sfp, &node->mac_address_a[0]);
 		seq_printf(sfp, " ");
-		print_mac_address(sfp, &node->MacAddressB[0]);
+		print_mac_address(sfp, &node->mac_address_b[0]);
 		seq_printf(sfp, "0x%lx, ", node->time_in[HSR_PT_SLAVE_A]);
 		seq_printf(sfp, "0x%lx ", node->time_in[HSR_PT_SLAVE_B]);
-		seq_printf(sfp, "0x%x", node->AddrB_port);
+		seq_printf(sfp, "0x%x", node->addr_b_port);
 		seq_printf(sfp, "\n");
 	}
 	rcu_read_unlock();

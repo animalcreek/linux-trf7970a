@@ -54,9 +54,9 @@ bool hsr_addr_is_self(struct hsr_priv *hsr, unsigned char *addr)
 		return false;
 	}
 
-	if (ether_addr_equal(addr, node->MacAddressA))
+	if (ether_addr_equal(addr, node->mac_address_a))
 		return true;
-	if (ether_addr_equal(addr, node->MacAddressB))
+	if (ether_addr_equal(addr, node->mac_address_b))
 		return true;
 
 	return false;
@@ -64,13 +64,13 @@ bool hsr_addr_is_self(struct hsr_priv *hsr, unsigned char *addr)
 
 /* Search for mac entry. Caller must hold rcu read lock.
  */
-static struct hsr_node *find_node_by_AddrA(struct list_head *node_db,
-					   const unsigned char addr[ETH_ALEN])
+static struct hsr_node *find_node_by_addr_a(struct list_head *node_db,
+					    const unsigned char addr[ETH_ALEN])
 {
 	struct hsr_node *node;
 
 	list_for_each_entry_rcu(node, node_db, mac_list) {
-		if (ether_addr_equal(node->MacAddressA, addr))
+		if (ether_addr_equal(node->mac_address_a, addr))
 			return node;
 	}
 
@@ -91,12 +91,12 @@ int hsr_create_self_node(struct list_head *self_node_db,
 	if (!node)
 		return -ENOMEM;
 
-	ether_addr_copy(node->MacAddressA, addr_a);
-	ether_addr_copy(node->MacAddressB, addr_b);
+	ether_addr_copy(node->mac_address_a, addr_a);
+	ether_addr_copy(node->mac_address_b, addr_b);
 
 	rcu_read_lock();
 	oldnode = list_first_or_null_rcu(self_node_db,
-						struct hsr_node, mac_list);
+					 struct hsr_node, mac_list);
 	if (oldnode) {
 		list_replace_rcu(&oldnode->mac_list, &node->mac_list);
 		rcu_read_unlock();
@@ -109,7 +109,6 @@ int hsr_create_self_node(struct list_head *self_node_db,
 
 	return 0;
 }
-
 
 /* Allocate an hsr_node and add it to node_db. 'addr' is the node's AddressA;
  * seq_out is used to initialize filtering of outgoing duplicate frames
@@ -126,7 +125,7 @@ struct hsr_node *hsr_add_node(struct list_head *node_db, unsigned char addr[],
 	if (!node)
 		return NULL;
 
-	ether_addr_copy(node->MacAddressA, addr);
+	ether_addr_copy(node->mac_address_a, addr);
 
 	/* We are only interested in time diffs here, so use current jiffies
 	 * as initialization. (0 could trigger an spurious ring error warning).
@@ -157,16 +156,15 @@ struct hsr_node *hsr_get_node(struct list_head *node_db, struct sk_buff *skb,
 	ethhdr = (struct ethhdr *) skb_mac_header(skb);
 
 	list_for_each_entry_rcu(node, node_db, mac_list) {
-		if (ether_addr_equal(node->MacAddressA, ethhdr->h_source))
+		if (ether_addr_equal(node->mac_address_a, ethhdr->h_source))
 			return node;
-		if (ether_addr_equal(node->MacAddressB, ethhdr->h_source))
+		if (ether_addr_equal(node->mac_address_b, ethhdr->h_source))
 			return node;
 	}
 
 	/* Everyone may create a node entry, connected node to a HSR device. */
-
-	if (ethhdr->h_proto == htons(ETH_P_PRP)
-			|| ethhdr->h_proto == htons(ETH_P_HSR))
+	if (ethhdr->h_proto == htons(ETH_P_PRP) ||
+	    ethhdr->h_proto == htons(ETH_P_HSR))
 		/* Use the existing sequence_nr from the tag as starting point
 		 * for filtering duplicate frames.
 		 */
@@ -177,8 +175,8 @@ struct hsr_node *hsr_get_node(struct list_head *node_db, struct sk_buff *skb,
 	return hsr_add_node(node_db, ethhdr->h_source, seq_out);
 }
 
-/* Use the Supervision frame's info about an eventual MacAddressB for merging
- * nodes that has previously had their MacAddressB registered as a separate
+/* Use the Supervision frame's info about an eventual mac_address_b for merging
+ * nodes that has previously had their mac_address_b registered as a separate
  * node.
  */
 void hsr_handle_sup_frame(struct sk_buff *skb, struct hsr_node *node_curr,
@@ -202,14 +200,14 @@ void hsr_handle_sup_frame(struct sk_buff *skb, struct hsr_node *node_curr,
 	/* And leave the HSR sup tag. */
 	skb_pull(skb, sizeof(struct hsr_sup_tag));
 
-	hsr_sp = (struct hsr_sup_payload *) skb->data;
+	hsr_sp = (struct hsr_sup_payload *)skb->data;
 
-	/* Merge node_curr (registered on MacAddressB) into node_real */
+	/* Merge node_curr (registered on mac_address_b) into node_real */
 	node_db = &port_rcv->hsr->node_db;
-	node_real = find_node_by_AddrA(node_db, hsr_sp->MacAddressA);
+	node_real = find_node_by_addr_a(node_db, hsr_sp->mac_address_a);
 	if (!node_real)
 		/* No frame received from AddrA of this node yet */
-		node_real = hsr_add_node(node_db, hsr_sp->MacAddressA,
+		node_real = hsr_add_node(node_db, hsr_sp->mac_address_a,
 					 HSR_SEQNR_START - 1);
 	if (!node_real)
 		goto done; /* No mem */
@@ -217,7 +215,7 @@ void hsr_handle_sup_frame(struct sk_buff *skb, struct hsr_node *node_curr,
 		/* Node has already been merged */
 		goto done;
 
-	ether_addr_copy(node_real->MacAddressB, ethhdr->h_source);
+	ether_addr_copy(node_real->mac_address_b, ethhdr->h_source);
 	for (i = 0; i < HSR_PT_PORTS; i++) {
 		if (!node_curr->time_in_stale[i] &&
 		    time_after(node_curr->time_in[i], node_real->time_in[i])) {
@@ -227,7 +225,7 @@ void hsr_handle_sup_frame(struct sk_buff *skb, struct hsr_node *node_curr,
 		if (seq_nr_after(node_curr->seq_out[i], node_real->seq_out[i]))
 			node_real->seq_out[i] = node_curr->seq_out[i];
 	}
-	node_real->AddrB_port = port_rcv->type;
+	node_real->addr_b_port = port_rcv->type;
 
 	list_del_rcu(&node_curr->mac_list);
 	kfree_rcu(node_curr, rcu_head);
@@ -236,11 +234,10 @@ done:
 	skb_push(skb, sizeof(struct hsrv1_ethhdr_sp));
 }
 
-
 /* 'skb' is a frame meant for this host, that is to be passed to upper layers.
  *
  * If the frame was sent by a node's B interface, replace the source
- * address with that node's "official" address (MacAddressA) so that upper
+ * address with that node's "official" address (mac_address_a) so that upper
  * layers recognize where it came from.
  */
 void hsr_addr_subst_source(struct hsr_node *node, struct sk_buff *skb)
@@ -250,7 +247,7 @@ void hsr_addr_subst_source(struct hsr_node *node, struct sk_buff *skb)
 		return;
 	}
 
-	memcpy(&eth_hdr(skb)->h_source, node->MacAddressA, ETH_ALEN);
+	memcpy(&eth_hdr(skb)->h_source, node->mac_address_a, ETH_ALEN);
 }
 
 /* 'skb' is a frame meant for another host.
@@ -275,16 +272,17 @@ void hsr_addr_subst_dest(struct hsr_node *node_src, struct sk_buff *skb,
 	if (!is_unicast_ether_addr(eth_hdr(skb)->h_dest))
 		return;
 
-	node_dst = find_node_by_AddrA(&port->hsr->node_db, eth_hdr(skb)->h_dest);
+	node_dst = find_node_by_addr_a(&port->hsr->node_db,
+				       eth_hdr(skb)->h_dest);
 	if (!node_dst) {
 		WARN_ONCE(1, "%s: Unknown node\n", __func__);
 		return;
 	}
-	if (port->type != node_dst->AddrB_port)
+	if (port->type != node_dst->addr_b_port)
 		return;
 
-	if (is_valid_ether_addr(node_dst->MacAddressB))
-		ether_addr_copy(eth_hdr(skb)->h_dest, node_dst->MacAddressB);
+	if (is_valid_ether_addr(node_dst->mac_address_b))
+		ether_addr_copy(eth_hdr(skb)->h_dest, node_dst->mac_address_b);
 	else
 		WARN_ONCE(1, "%s: mac address B not valid\n", __func__);
 }
@@ -355,7 +353,7 @@ void hsr_prune_nodes(unsigned long data)
 	unsigned long timestamp;
 	unsigned long time_a, time_b;
 
-	hsr = (struct hsr_priv *) data;
+	hsr = (struct hsr_priv *)data;
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(node, &hsr->node_db, mac_list) {
@@ -364,9 +362,9 @@ void hsr_prune_nodes(unsigned long data)
 		time_b = node->time_in[HSR_PT_SLAVE_B];
 
 		/* Check for timestamps old enough to risk wrap-around */
-		if (time_after(jiffies, time_a + MAX_JIFFY_OFFSET/2))
+		if (time_after(jiffies, time_a + MAX_JIFFY_OFFSET / 2))
 			node->time_in_stale[HSR_PT_SLAVE_A] = true;
-		if (time_after(jiffies, time_b + MAX_JIFFY_OFFSET/2))
+		if (time_after(jiffies, time_b + MAX_JIFFY_OFFSET / 2))
 			node->time_in_stale[HSR_PT_SLAVE_B] = true;
 
 		/* Get age of newest frame from node.
@@ -381,18 +379,19 @@ void hsr_prune_nodes(unsigned long data)
 
 		/* Warn of ring error only as long as we get frames at all */
 		if (time_is_after_jiffies(timestamp +
-					msecs_to_jiffies(1.5*MAX_SLAVE_DIFF))) {
+			msecs_to_jiffies(1.5 * MAX_SLAVE_DIFF))) {
 			rcu_read_lock();
 			port = get_late_port(hsr, node);
-			if (port != NULL)
-				hsr_nl_ringerror(hsr, node->MacAddressA, port);
+			if (port)
+				hsr_nl_ringerror(hsr,
+						 node->mac_address_a, port);
 			rcu_read_unlock();
 		}
 
 		/* Prune old entries */
 		if (time_is_before_jiffies(timestamp +
-					msecs_to_jiffies(HSR_NODE_FORGET_TIME))) {
-			hsr_nl_nodedown(hsr, node->MacAddressA);
+			msecs_to_jiffies(HSR_NODE_FORGET_TIME))) {
+			hsr_nl_nodedown(hsr, node->mac_address_a);
 			list_del_rcu(&node->mac_list);
 			/* Note that we need to free this entry later: */
 			kfree_rcu(node, rcu_head);
@@ -411,13 +410,13 @@ void *hsr_get_next_node(struct hsr_priv *hsr, void *_pos,
 		node = list_first_or_null_rcu(&hsr->node_db,
 					      struct hsr_node, mac_list);
 		if (node)
-			ether_addr_copy(addr, node->MacAddressA);
+			ether_addr_copy(addr, node->mac_address_a);
 		return node;
 	}
 
 	node = _pos;
 	list_for_each_entry_continue_rcu(node, &hsr->node_db, mac_list) {
-		ether_addr_copy(addr, node->MacAddressA);
+		ether_addr_copy(addr, node->mac_address_a);
 		return node;
 	}
 
@@ -438,15 +437,14 @@ int hsr_get_node_data(struct hsr_priv *hsr,
 	struct hsr_port *port;
 	unsigned long tdiff;
 
-
 	rcu_read_lock();
-	node = find_node_by_AddrA(&hsr->node_db, addr);
+	node = find_node_by_addr_a(&hsr->node_db, addr);
 	if (!node) {
 		rcu_read_unlock();
 		return -ENOENT;	/* No such entry */
 	}
 
-	ether_addr_copy(addr_b, node->MacAddressB);
+	ether_addr_copy(addr_b, node->mac_address_b);
 
 	tdiff = jiffies - node->time_in[HSR_PT_SLAVE_A];
 	if (node->time_in_stale[HSR_PT_SLAVE_A])
@@ -472,8 +470,8 @@ int hsr_get_node_data(struct hsr_priv *hsr,
 	*if1_seq = node->seq_out[HSR_PT_SLAVE_B];
 	*if2_seq = node->seq_out[HSR_PT_SLAVE_A];
 
-	if (node->AddrB_port != HSR_PT_NONE) {
-		port = hsr_port_get_hsr(hsr, node->AddrB_port);
+	if (node->addr_b_port != HSR_PT_NONE) {
+		port = hsr_port_get_hsr(hsr, node->addr_b_port);
 		*addr_b_ifindex = port->dev->ifindex;
 	} else {
 		*addr_b_ifindex = -1;

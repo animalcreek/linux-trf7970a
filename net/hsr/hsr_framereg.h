@@ -53,10 +53,10 @@ int hsr_get_node_data(struct hsr_priv *hsr,
 
 struct hsr_node {
 	struct list_head	mac_list;
-	unsigned char		MacAddressA[ETH_ALEN];
-	unsigned char		MacAddressB[ETH_ALEN];
+	unsigned char		mac_address_a[ETH_ALEN];
+	unsigned char		mac_address_b[ETH_ALEN];
 	/* Local slave through which AddrB frames are received from this node */
-	enum hsr_port_type	AddrB_port;
+	enum hsr_port_type	addr_b_port;
 	unsigned long		time_in[HSR_PT_PORTS];
 	bool			time_in_stale[HSR_PT_PORTS];
 	u16			seq_out[HSR_PT_PORTS];
