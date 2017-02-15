@@ -36,7 +36,7 @@ hsr_prp_node_table_show (struct seq_file *sfp, void *data)
 
 	seq_printf(sfp, "Node Table entries\n");
 	seq_printf(sfp, "MAC-Address-A,   MAC-Address-B, time_in[A], ");
-	seq_printf(sfp, "time_in[B]");
+	seq_printf(sfp, "time_in[B], Address-B port");
 	seq_printf(sfp, "\n");
 	rcu_read_lock();
 	list_for_each_entry_rcu(node, &priv->node_db, mac_list) {
@@ -47,7 +47,8 @@ hsr_prp_node_table_show (struct seq_file *sfp, void *data)
 		seq_printf(sfp, " ");
 		print_mac_address(sfp, &node->MacAddressB[0]);
 		seq_printf(sfp, "0x%lx, ", node->time_in[HSR_PT_SLAVE_A]);
-		seq_printf(sfp, "0x%lx", node->time_in[HSR_PT_SLAVE_B]);
+		seq_printf(sfp, "0x%lx ", node->time_in[HSR_PT_SLAVE_B]);
+		seq_printf(sfp, "0x%x", node->AddrB_port);
 		seq_printf(sfp, "\n");
 	}
 	rcu_read_unlock();
