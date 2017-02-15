@@ -166,15 +166,13 @@ struct hsr_node *hsr_get_node(struct list_head *node_db, struct sk_buff *skb,
 	/* Everyone may create a node entry, connected node to a HSR device. */
 
 	if (ethhdr->h_proto == htons(ETH_P_PRP)
-			|| ethhdr->h_proto == htons(ETH_P_HSR)) {
+			|| ethhdr->h_proto == htons(ETH_P_HSR))
 		/* Use the existing sequence_nr from the tag as starting point
 		 * for filtering duplicate frames.
 		 */
 		seq_out = hsr_get_skb_sequence_nr(skb) - 1;
-	} else {
-		WARN_ONCE(1, "%s: Non-HSR frame\n", __func__);
+	else
 		seq_out = HSR_SEQNR_START;
-	}
 
 	return hsr_add_node(node_db, ethhdr->h_source, seq_out);
 }
@@ -285,7 +283,10 @@ void hsr_addr_subst_dest(struct hsr_node *node_src, struct sk_buff *skb,
 	if (port->type != node_dst->AddrB_port)
 		return;
 
-	ether_addr_copy(eth_hdr(skb)->h_dest, node_dst->MacAddressB);
+	if (is_valid_ether_addr(node_dst->MacAddressB))
+		ether_addr_copy(eth_hdr(skb)->h_dest, node_dst->MacAddressB);
+	else
+		WARN_ONCE(1, "%s: mac address B not valid\n", __func__);
 }
 
 
