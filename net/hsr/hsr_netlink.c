@@ -118,8 +118,6 @@ static struct rtnl_link_ops hsr_link_ops __read_mostly = {
 	.fill_info	= hsr_fill_info,
 };
 
-
-
 /* attribute policy */
 static const struct nla_policy hsr_genl_policy[HSR_A_MAX + 1] = {
 	[HSR_A_NODE_ADDR] = { .len = ETH_ALEN },
@@ -142,8 +140,6 @@ static struct genl_family hsr_genl_family = {
 static const struct genl_multicast_group hsr_mcgrps[] = {
 	{ .name = "hsr-network", },
 };
-
-
 
 /* This is called if for some node with MAC address addr, we only get frames
  * over one of the slave interfaces. This would indicate an open network ring
@@ -226,7 +222,6 @@ fail:
 	rcu_read_unlock();
 }
 
-
 /* HSR_C_GET_NODE_STATUS lets userspace query the internal HSR node table
  * about the status of a specific node in the network, defined by its MAC
  * address.
@@ -294,13 +289,14 @@ static int hsr_get_node_status(struct sk_buff *skb_in, struct genl_info *info)
 
 	hsr = netdev_priv(hsr_dev);
 	res = hsr_get_node_data(hsr,
-			(unsigned char *) nla_data(info->attrs[HSR_A_NODE_ADDR]),
-			hsr_node_addr_b,
-			&addr_b_ifindex,
-			&hsr_node_if1_age,
-			&hsr_node_if1_seq,
-			&hsr_node_if2_age,
-			&hsr_node_if2_seq);
+				(unsigned char *)
+				nla_data(info->attrs[HSR_A_NODE_ADDR]),
+				hsr_node_addr_b,
+				&addr_b_ifindex,
+				&hsr_node_if1_age,
+				&hsr_node_if1_seq,
+				&hsr_node_if2_age,
+				&hsr_node_if2_seq);
 	if (res < 0)
 		goto nla_put_failure;
 

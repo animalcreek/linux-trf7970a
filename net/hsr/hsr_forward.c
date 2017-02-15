@@ -32,7 +32,6 @@ struct hsr_frame_info {
 	bool is_local_exclusive;
 };
 
-
 /* The uses I can see for these HSR supervision frames are:
  * 1) Use the frames that are sent after node initialization ("HSR_TLV.Type =
  *    22") to reset any sequence_nr counters belonging to that node. Useful if
@@ -51,8 +50,8 @@ struct hsr_frame_info {
 static bool is_supervision_frame(struct hsr_priv *hsr, struct sk_buff *skb)
 {
 	struct ethhdr *ethHdr;
-	struct hsr_sup_tag *hsrSupTag;
-	struct hsrv1_ethhdr_sp *hsrV1Hdr;
+	struct hsr_sup_tag *hsr_sup_tag;
+	struct hsrv1_ethhdr_sp *hsr_v1_hdr;
 
 	WARN_ON_ONCE(!skb_mac_header_was_set(skb));
 	ethHdr = (struct ethhdr *) skb_mac_header(skb);
@@ -69,21 +68,22 @@ static bool is_supervision_frame(struct hsr_priv *hsr, struct sk_buff *skb)
 
 	/* Get the supervision header from correct location. */
 	if (ethHdr->h_proto == htons(ETH_P_HSR)) { /* Okay HSRv1. */
-		hsrV1Hdr = (struct hsrv1_ethhdr_sp *) skb_mac_header(skb);
-		if (hsrV1Hdr->hsr.encap_proto != htons(ETH_P_PRP))
+		hsr_v1_hdr = (struct hsrv1_ethhdr_sp *)skb_mac_header(skb);
+		if (hsr_v1_hdr->hsr.encap_proto != htons(ETH_P_PRP))
 			return false;
 
-		hsrSupTag = &hsrV1Hdr->hsr_sup;
+		hsr_sup_tag = &hsr_v1_hdr->hsr_sup;
 	} else {
-		hsrSupTag = &((struct hsrv0_ethhdr_sp *) skb_mac_header(skb))->hsr_sup;
+		hsr_sup_tag = &((struct hsrv0_ethhdr_sp *)
+				skb_mac_header(skb))->hsr_sup;
 	}
 
-	if ((hsrSupTag->HSR_TLV_Type != HSR_TLV_ANNOUNCE) &&
-	    (hsrSupTag->HSR_TLV_Type != HSR_TLV_LIFE_CHECK))
+	if ((hsr_sup_tag->HSR_TLV_type != HSR_TLV_ANNOUNCE) &&
+	    (hsr_sup_tag->HSR_TLV_type != HSR_TLV_LIFE_CHECK))
 		return false;
-	if ((hsrSupTag->HSR_TLV_Length != 12) &&
-			(hsrSupTag->HSR_TLV_Length !=
-					sizeof(struct hsr_sup_payload)))
+
+	if ((hsr_sup_tag->HSR_TLV_length != 12) &&
+	    (hsr_sup_tag->HSR_TLV_length != sizeof(struct hsr_sup_payload)))
 		return false;
 
 	return true;
@@ -98,9 +98,10 @@ static struct sk_buff *create_stripped_skb(struct sk_buff *skb_in,
 	unsigned char *dst, *src;
 
 	skb_pull(skb_in, HSR_HLEN);
-	skb = __pskb_copy(skb_in, skb_headroom(skb_in) - HSR_HLEN, GFP_ATOMIC);
+	skb = __pskb_copy(skb_in,
+			  skb_headroom(skb_in) - HSR_HLEN, GFP_ATOMIC);
 	skb_push(skb_in, HSR_HLEN);
-	if (skb == NULL)
+	if (!skb)
 		return NULL;
 
 	skb_reset_mac_header(skb);
@@ -129,7 +130,7 @@ static struct sk_buff *frame_get_stripped_skb(struct hsr_frame_info *frame,
 
 
 static void hsr_fill_tag(struct sk_buff *skb, struct hsr_frame_info *frame,
-			 struct hsr_port *port, u8 protoVersion)
+			 struct hsr_port *port, u8 proto_version)
 {
 	struct hsr_ethhdr *hsr_ethhdr;
 	int lane_id;
@@ -150,7 +151,7 @@ static void hsr_fill_tag(struct sk_buff *skb, struct hsr_frame_info *frame,
 	set_hsr_tag_LSDU_size(&hsr_ethhdr->hsr_tag, lsdu_size);
 	hsr_ethhdr->hsr_tag.sequence_nr = htons(frame->sequence_nr);
 	hsr_ethhdr->hsr_tag.encap_proto = hsr_ethhdr->ethhdr.h_proto;
-	hsr_ethhdr->ethhdr.h_proto = htons(protoVersion ?
+	hsr_ethhdr->ethhdr.h_proto = htons(proto_version ?
 			ETH_P_HSR : ETH_P_PRP);
 }
 
@@ -180,7 +181,7 @@ static struct sk_buff *create_tagged_skb(struct sk_buff *skb_o,
 	memmove(dst, src, movelen);
 	skb_reset_mac_header(skb);
 
-	hsr_fill_tag(skb, frame, port, port->hsr->protVersion);
+	hsr_fill_tag(skb, frame, port, port->hsr->prot_version);
 
 	return skb;
 }
@@ -194,8 +195,10 @@ static struct sk_buff *frame_get_tagged_skb(struct hsr_frame_info *frame,
 	if (frame->skb_hsr)
 		return skb_clone(frame->skb_hsr, GFP_ATOMIC);
 
-	if ((port->type != HSR_PT_SLAVE_A) && (port->type != HSR_PT_SLAVE_B)) {
-		WARN_ONCE(1, "HSR: Bug: trying to create a tagged frame for a non-ring port");
+	if ((port->type != HSR_PT_SLAVE_A) &&
+	    (port->type != HSR_PT_SLAVE_B)) {
+		WARN_ONCE(1,
+			  "Bug: creating a tagged frame for a non-ring port");
 		return NULL;
 	}
 
@@ -271,7 +274,8 @@ static void hsr_forward_do(struct hsr_frame_info *frame)
 			continue;
 
 		/* Deliver frames directly addressed to us to master only */
-		if ((port->type != HSR_PT_MASTER) && frame->is_local_exclusive)
+		if ((port->type != HSR_PT_MASTER) &&
+		    frame->is_local_exclusive)
 			continue;
 
 		/* Don't send frame over port where it has been sent before
@@ -309,10 +313,10 @@ static void hsr_forward_do(struct hsr_frame_info *frame)
 			skb = frame_get_tagged_skb(frame, port);
 		else
 			skb = frame_get_stripped_skb(frame, port);
-		if (!skb) {
-			/* FIXME: Record the dropped frame? */
+
+		/* FIXME: Record the dropped frame? */
+		if (!skb)
 			continue;
-		}
 
 		skb->dev = port->dev;
 		if (port->type == HSR_PT_MASTER)
@@ -362,8 +366,10 @@ static int hsr_fill_frame_info(struct hsr_frame_info *frame,
 		frame->node_src = hsr_get_node(&port->hsr->node_db, skb,
 					       frame->is_supervision);
 		/* Unknown node and !is_supervision, or no mem */
-		if (!frame->node_src)
+		if (!frame->node_src) {
+			WARN_ONCE(1, "Unknown frame received\n");
 			return -1;
+		}
 	}
 
 	ethhdr = (struct ethhdr *) skb_mac_header(skb);
@@ -373,8 +379,8 @@ static int hsr_fill_frame_info(struct hsr_frame_info *frame,
 		/* FIXME: */
 		WARN_ONCE(1, "HSR: VLAN not yet supported");
 	}
-	if (ethhdr->h_proto == htons(ETH_P_PRP)
-			|| ethhdr->h_proto == htons(ETH_P_HSR)) {
+	if (ethhdr->h_proto == htons(ETH_P_PRP) ||
+	    ethhdr->h_proto == htons(ETH_P_HSR)) {
 		frame->skb_std = NULL;
 		frame->skb_hsr = skb;
 		frame->sequence_nr = hsr_get_skb_sequence_nr(skb);
