@@ -9,12 +9,11 @@
  *	2011-2014 Arvid Brodin, arvid.brodin@alten.se
  */
 
-#ifndef __HSR_PRIVATE_H
-#define __HSR_PRIVATE_H
+#ifndef __HSR_PRP_PRIVATE_H
+#define __HSR_PRP_PRIVATE_H
 
 #include <linux/netdevice.h>
 #include <linux/list.h>
-
 
 /* Time constants as specified in the HSR specification (IEC-62439-3 2010)
  * Table 8.
@@ -78,8 +77,8 @@ static inline u16 get_hsr_tag_LSDU_size(struct hsr_tag *ht)
 
 static inline void set_hsr_tag_path(struct hsr_tag *ht, u16 path)
 {
-	ht->path_and_LSDU_size = htons(
-			(ntohs(ht->path_and_LSDU_size) & 0x0FFF) | (path << 12));
+	ht->path_and_LSDU_size =
+		htons((ntohs(ht->path_and_LSDU_size) & 0x0FFF) | (path << 12));
 }
 
 static inline void set_hsr_tag_LSDU_size(struct hsr_tag *ht, u16 LSDU_size)
@@ -93,7 +92,6 @@ struct hsr_ethhdr {
 	struct ethhdr	ethhdr;
 	struct hsr_tag	hsr_tag;
 } __packed;
-
 
 /* HSR/PRP Supervision Frame data types.
  * Field names as defined in the IEC:2012 standard for HSR.
@@ -140,7 +138,6 @@ struct hsrv1_ethhdr_sp {
 	struct hsr_tag		hsr;
 	struct hsr_prp_sup_tag	hsr_sup;
 } __packed;
-
 
 enum hsr_prp_port_type {
 	HSR_PRP_PT_NONE = 0,	/* Must be 0, used by framereg */
@@ -198,10 +195,12 @@ static inline u16 hsr_get_skb_sequence_nr(struct sk_buff *skb)
 }
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-int hsr_prp_debugfs_init(struct hsr_prp_priv *priv);
+int hsr_prp_debugfs_init(struct hsr_prp_priv *priv,
+			 struct net_device *hsr_prp_dev);
 void hsr_prp_debugfs_term(struct hsr_prp_priv *priv);
 #else
-static inline int hsr_prp_debugfs_init(struct hsr_prp_priv *priv)
+static inline int hsr_prp_debugfs_init(struct hsr_prp_priv *priv,
+				       struct net_device *hsr_prp_dev)
 {
 	return 0;
 }
@@ -210,4 +209,4 @@ static inline void hsr_prp_debugfs_term(struct hsr_prp_priv *priv)
 {}
 #endif
 
-#endif /*  __HSR_PRIVATE_H */
+#endif /*  __HSR_PRP_PRIVATE_H */

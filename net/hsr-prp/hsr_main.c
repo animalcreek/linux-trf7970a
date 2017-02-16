@@ -13,11 +13,11 @@
 #include <linux/rculist.h>
 #include <linux/timer.h>
 #include <linux/etherdevice.h>
-#include "hsr_main.h"
-#include "hsr_device.h"
+#include "hsr_prp_main.h"
+#include "hsr_prp_device.h"
 #include "hsr_netlink.h"
-#include "hsr_framereg.h"
-#include "hsr_slave.h"
+#include "hsr_prp_framereg.h"
+#include "hsr_prp_slave.h"
 
 int hsr_prp_netdev_notify(struct notifier_block *nb, unsigned long event,
 			  void *ptr)
@@ -30,12 +30,12 @@ int hsr_prp_netdev_notify(struct notifier_block *nb, unsigned long event,
 
 	dev = netdev_notifier_info_to_dev(ptr);
 	port = hsr_prp_port_get_rtnl(dev);
-	if (port == NULL) {
+	if (!port) {
 		if (!is_hsr_prp_master(dev))
 			return NOTIFY_DONE;	/* Not an HSR device */
 		priv = netdev_priv(dev);
 		port = hsr_prp_get_port(priv, HSR_PRP_PT_MASTER);
-		if (port == NULL) {
+		if (!port) {
 			/* Resend of notification concerning removed device? */
 			return NOTIFY_DONE;
 		}
@@ -62,7 +62,8 @@ int hsr_prp_netdev_notify(struct notifier_block *nb, unsigned long event,
 
 		if (port->type == HSR_PRP_PT_SLAVE_A) {
 			ether_addr_copy(master->dev->dev_addr, dev->dev_addr);
-			call_netdevice_notifiers(NETDEV_CHANGEADDR, master->dev);
+			call_netdevice_notifiers(NETDEV_CHANGEADDR,
+						 master->dev);
 		}
 
 		/* Make sure we recognize frames from ourselves in hsr_rcv() */

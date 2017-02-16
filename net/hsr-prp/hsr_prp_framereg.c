@@ -18,12 +18,11 @@
 #include <linux/etherdevice.h>
 #include <linux/slab.h>
 #include <linux/rculist.h>
-#include "hsr_main.h"
-#include "hsr_framereg.h"
+#include "hsr_prp_main.h"
+#include "hsr_prp_framereg.h"
 #include "hsr_netlink.h"
 
 /*	TODO: use hash lists for mac addresses (linux/jhash.h)?    */
-
 
 /* seq_nr_after(a, b) - return true if a is after (higher in sequence than) b,
  * false otherwise.
@@ -33,15 +32,15 @@ static bool seq_nr_after(u16 a, u16 b)
 	/* Remove inconsistency where
 	 * seq_nr_after(a, b) == seq_nr_before(a, b)
 	 */
-	if ((int) b - a == 32768)
+	if ((int)b - a == 32768)
 		return false;
 
-	return (((s16) (b - a)) < 0);
+	return (((s16)(b - a)) < 0);
 }
+
 #define seq_nr_before(a, b)		seq_nr_after((b), (a))
 #define seq_nr_after_or_eq(a, b)	(!seq_nr_before((a), (b)))
 #define seq_nr_before_or_eq(a, b)	(!seq_nr_after((a), (b)))
-
 
 bool hsr_prp_addr_is_self(struct hsr_prp_priv *priv, unsigned char *addr)
 {
@@ -77,7 +76,6 @@ find_node_by_addr_a(struct list_head *node_db,
 
 	return NULL;
 }
-
 
 /* Helper for device init; the self_node_db is used in hsr_rcv() to recognize
  * frames from self that's been looped over the HSR ring.
@@ -156,7 +154,7 @@ struct hsr_prp_node *hsr_prp_get_node(struct list_head *node_db,
 	if (!skb_mac_header_was_set(skb))
 		return NULL;
 
-	ethhdr = (struct ethhdr *) skb_mac_header(skb);
+	ethhdr = (struct ethhdr *)skb_mac_header(skb);
 
 	list_for_each_entry_rcu(node, node_db, mac_list) {
 		if (ether_addr_equal(node->mac_address_a, ethhdr->h_source))
@@ -192,7 +190,7 @@ void hsr_prp_handle_sup_frame(struct sk_buff *skb,
 	struct list_head *node_db;
 	int i;
 
-	ethhdr = (struct ethhdr *) skb_mac_header(skb);
+	ethhdr = (struct ethhdr *)skb_mac_header(skb);
 
 	/* Leave the ethernet header. */
 	skb_pull(skb, sizeof(struct ethhdr));
@@ -224,7 +222,8 @@ void hsr_prp_handle_sup_frame(struct sk_buff *skb,
 		if (!node_curr->time_in_stale[i] &&
 		    time_after(node_curr->time_in[i], node_real->time_in[i])) {
 			node_real->time_in[i] = node_curr->time_in[i];
-			node_real->time_in_stale[i] = node_curr->time_in_stale[i];
+			node_real->time_in_stale[i] =
+				node_curr->time_in_stale[i];
 		}
 		if (seq_nr_after(node_curr->seq_out[i], node_real->seq_out[i]))
 			node_real->seq_out[i] = node_curr->seq_out[i];

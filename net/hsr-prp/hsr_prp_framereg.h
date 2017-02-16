@@ -9,10 +9,10 @@
  *	2011-2014 Arvid Brodin, arvid.brodin@alten.se
  */
 
-#ifndef __HSR_FRAMEREG_H
-#define __HSR_FRAMEREG_H
+#ifndef __HSR_PRP_FRAMEREG_H
+#define __HSR_PRP_FRAMEREG_H
 
-#include "hsr_main.h"
+#include "hsr_prp_main.h"
 
 struct hsr_prp_node;
 
@@ -63,4 +63,4 @@ struct hsr_prp_node {
 	struct rcu_head		rcu_head;
 };
 
-#endif /* __HSR_FRAMEREG_H */
+#endif /* __HSR_PRP_FRAMEREG_H */

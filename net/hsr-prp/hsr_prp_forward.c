@@ -9,13 +9,13 @@
  *	2011-2014 Arvid Brodin, arvid.brodin@alten.se
  */
 
-#include "hsr_forward.h"
+#include "hsr_prp_forward.h"
 #include <linux/types.h>
 #include <linux/skbuff.h>
 #include <linux/etherdevice.h>
 #include <linux/if_vlan.h>
-#include "hsr_main.h"
-#include "hsr_framereg.h"
+#include "hsr_prp_main.h"
+#include "hsr_prp_framereg.h"
 
 struct hsr_prp_node;
 
@@ -48,25 +48,25 @@ struct hsr_prp_frame_info {
  */
 static bool is_supervision_frame(struct hsr_prp_priv *priv, struct sk_buff *skb)
 {
-	struct ethhdr *ethHdr;
+	struct ethhdr *eth_hdr;
 	struct hsr_prp_sup_tag *hsr_sup_tag;
 	struct hsrv1_ethhdr_sp *hsr_v1_hdr;
 
 	WARN_ON_ONCE(!skb_mac_header_was_set(skb));
-	ethHdr = (struct ethhdr *) skb_mac_header(skb);
+	eth_hdr = (struct ethhdr *)skb_mac_header(skb);
 
 	/* Correct addr? */
-	if (!ether_addr_equal(ethHdr->h_dest,
+	if (!ether_addr_equal(eth_hdr->h_dest,
 			      priv->sup_multicast_addr))
 		return false;
 
 	/* Correct ether type?. */
-	if (!(ethHdr->h_proto == htons(ETH_P_PRP)
-			|| ethHdr->h_proto == htons(ETH_P_HSR)))
+	if (!(eth_hdr->h_proto == htons(ETH_P_PRP) ||
+	      eth_hdr->h_proto == htons(ETH_P_HSR)))
 		return false;
 
 	/* Get the supervision header from correct location. */
-	if (ethHdr->h_proto == htons(ETH_P_HSR)) { /* Okay HSRv1. */
+	if (eth_hdr->h_proto == htons(ETH_P_HSR)) { /* Okay HSRv1. */
 		hsr_v1_hdr = (struct hsrv1_ethhdr_sp *)skb_mac_header(skb);
 		if (hsr_v1_hdr->hsr.encap_proto != htons(ETH_P_PRP))
 			return false;
@@ -107,7 +107,7 @@ static struct sk_buff *create_stripped_skb(struct sk_buff *skb_in,
 	if (skb->ip_summed == CHECKSUM_PARTIAL)
 		skb->csum_start -= HSR_PRP_HLEN;
 
-	copylen = 2*ETH_ALEN;
+	copylen = 2 * ETH_ALEN;
 	if (frame->is_vlan)
 		copylen += VLAN_HLEN;
 	src = skb_mac_header(skb_in);
@@ -126,7 +126,6 @@ static struct sk_buff *frame_get_stripped_skb(struct hsr_prp_frame_info *frame,
 	return skb_clone(frame->skb_std, GFP_ATOMIC);
 }
 
-
 static void hsr_fill_tag(struct sk_buff *skb, struct hsr_prp_frame_info *frame,
 			 struct hsr_prp_port *port, u8 proto_version)
 {
@@ -143,7 +142,7 @@ static void hsr_fill_tag(struct sk_buff *skb, struct hsr_prp_frame_info *frame,
 	if (frame->is_vlan)
 		lsdu_size -= 4;
 
-	hsr_ethhdr = (struct hsr_ethhdr *) skb_mac_header(skb);
+	hsr_ethhdr = (struct hsr_ethhdr *)skb_mac_header(skb);
 
 	set_hsr_tag_path(&hsr_ethhdr->hsr_tag, lane_id);
 	set_hsr_tag_LSDU_size(&hsr_ethhdr->hsr_tag, lsdu_size);
@@ -164,7 +163,7 @@ static struct sk_buff *create_tagged_skb(struct sk_buff *skb_o,
 	/* Create the new skb with enough headroom to fit the HSR tag */
 	skb = __pskb_copy(skb_o, skb_headroom(skb_o) + HSR_PRP_HLEN,
 			  GFP_ATOMIC);
-	if (skb == NULL)
+	if (!skb)
 		return NULL;
 	skb_reset_mac_header(skb);
 
@@ -203,7 +202,6 @@ static struct sk_buff *frame_get_tagged_skb(struct hsr_prp_frame_info *frame,
 
 	return create_tagged_skb(frame->skb_std, frame, port);
 }
-
 
 static void hsr_prp_deliver_master(struct sk_buff *skb,
 				   struct hsr_prp_node *node_src,
@@ -374,7 +372,7 @@ static int hsr_prp_fill_frame_info(struct hsr_prp_frame_info *frame,
 		}
 	}
 
-	ethhdr = (struct ethhdr *) skb_mac_header(skb);
+	ethhdr = (struct ethhdr *)skb_mac_header(skb);
 	frame->is_vlan = false;
 	if (ethhdr->h_proto == htons(ETH_P_8021Q)) {
 		frame->is_vlan = true;
@@ -421,9 +419,9 @@ void hsr_prp_forward_skb(struct sk_buff *skb, struct hsr_prp_port *port)
 
 	hsr_prp_forward_do(&frame);
 
-	if (frame.skb_hsr != NULL)
+	if (frame.skb_hsr)
 		kfree_skb(frame.skb_hsr);
-	if (frame.skb_std != NULL)
+	if (frame.skb_std)
 		kfree_skb(frame.skb_std);
 	return;
 
