@@ -17,11 +17,11 @@
 #include <linux/etherdevice.h>
 #include <linux/rtnetlink.h>
 #include <linux/pkt_sched.h>
-#include "hsr_device.h"
-#include "hsr_slave.h"
-#include "hsr_framereg.h"
-#include "hsr_main.h"
-#include "hsr_forward.h"
+#include "hsr_prp_device.h"
+#include "hsr_prp_slave.h"
+#include "hsr_prp_framereg.h"
+#include "hsr_prp_main.h"
+#include "hsr_prp_forward.h"
 
 static bool is_admin_up(struct net_device *dev)
 {
@@ -355,7 +355,6 @@ static void hsr_prp_announce(unsigned long data)
 	rcu_read_unlock();
 }
 
-
 /* According to comments in the declaration of struct net_device, this function
  * is "Called from unregister, can be used to call free_netdev". Ok then...
  */
@@ -527,7 +526,7 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 			      slave[1]->dev_addr))
 		goto fail;
 
-	res = hsr_prp_debugfs_init(priv);
+	res = hsr_prp_debugfs_init(priv, hsr_prp_dev);
 	if (res)
 		goto fail;
 

@@ -9,12 +9,12 @@
  *	2011-2014 Arvid Brodin, arvid.brodin@alten.se
  */
 
-#ifndef __HSR_FORWARD_H
-#define __HSR_FORWARD_H
+#ifndef __HSR_PRP_FORWARD_H
+#define __HSR_PRP_FORWARD_H
 
 #include <linux/netdevice.h>
-#include "hsr_main.h"
+#include "hsr_prp_main.h"
 
 void hsr_prp_forward_skb(struct sk_buff *skb, struct hsr_prp_port *port);
 
-#endif /* __HSR_FORWARD_H */
+#endif /* __HSR_PRP_FORWARD_H */

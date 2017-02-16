@@ -17,46 +17,45 @@
 #include <linux/module.h>
 #include <linux/errno.h>
 #include <linux/debugfs.h>
-#include "hsr_main.h"
-#include "hsr_framereg.h"
+#include "hsr_prp_main.h"
+#include "hsr_prp_framereg.h"
 
 static void print_mac_address(struct seq_file *sfp, unsigned char *mac)
 {
 	seq_printf(sfp, "%02x:%02x:%02x:%02x:%02x:%02x:",
 		   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
-/*
- * hsr_prp_node_table_show - Formats and prints node_table entries
+
+/* hsr_prp_node_table_show - Formats and prints node_table entries
  */
 static int
-hsr_prp_node_table_show (struct seq_file *sfp, void *data)
+hsr_prp_node_table_show(struct seq_file *sfp, void *data)
 {
 	struct hsr_prp_priv *priv = (struct hsr_prp_priv *)sfp->private;
 	struct hsr_prp_node *node;
 
-	seq_printf(sfp, "Node Table entries\n");
-	seq_printf(sfp, "MAC-Address-A,   MAC-Address-B, time_in[A], ");
-	seq_printf(sfp, "time_in[B], Address-B port");
-	seq_printf(sfp, "\n");
+	seq_puts(sfp, "Node Table entries\n");
+	seq_puts(sfp, "MAC-Address-A,   MAC-Address-B, time_in[A], ");
+	seq_puts(sfp, "time_in[B], Address-B port");
+	seq_puts(sfp, "\n");
 	rcu_read_lock();
 	list_for_each_entry_rcu(node, &priv->node_db, mac_list) {
 		/* skip self node */
 		if (hsr_prp_addr_is_self(priv, node->mac_address_a))
 			continue;
 		print_mac_address(sfp, &node->mac_address_a[0]);
-		seq_printf(sfp, " ");
+		seq_puts(sfp, " ");
 		print_mac_address(sfp, &node->mac_address_b[0]);
 		seq_printf(sfp, "0x%lx, ", node->time_in[HSR_PRP_PT_SLAVE_A]);
 		seq_printf(sfp, "0x%lx ", node->time_in[HSR_PRP_PT_SLAVE_B]);
 		seq_printf(sfp, "0x%x", node->addr_b_port);
-		seq_printf(sfp, "\n");
+		seq_puts(sfp, "\n");
 	}
 	rcu_read_unlock();
 	return 0;
 }
 
-/*
- * hsr_prp_node_table_open - Open the node_table file
+/* hsr_prp_node_table_open - Open the node_table file
  *
  * Description:
  * This routine opens a debugfs file node_table of specific hsr device
@@ -75,32 +74,33 @@ static const struct file_operations hsr_prp_fops = {
 	.release = single_release,
 };
 
-/*
- * hsr_prp_debugfs_init - create hsr-prp node_table file for dumping
+/* hsr_prp_debugfs_init - create hsr-prp node_table file for dumping
  * the node table
  *
  * Description:
  * When debugfs is configured this routine sets up the node_table file per
  * hsr/prp device for dumping the node_table entries
  */
-int hsr_prp_debugfs_init(struct hsr_prp_priv *priv)
+int hsr_prp_debugfs_init(struct hsr_prp_priv *priv,
+			 struct net_device *hsr_prp_dev)
 {
 	int rc = -1;
 	struct dentry *de = NULL;
 
 	de = debugfs_create_dir("hsr", NULL);
 	if (!de) {
-		printk("Cannot create hsr-prp debugfs root\n");
+		netdev_err(hsr_prp_dev, "Cannot create hsr-prp debugfs root\n");
 		return rc;
 	}
 
 	priv->node_tbl_root = de;
 
-	de = debugfs_create_file("node_table", S_IFREG|S_IRUGO,
-				priv->node_tbl_root, priv,
-				&hsr_prp_fops);
+	de = debugfs_create_file("node_table", S_IFREG | S_IRUGO,
+				 priv->node_tbl_root, priv,
+				 &hsr_prp_fops);
 	if (!de) {
-		printk("Cannot create hsr-prp node_table directory\n");
+		netdev_err(hsr_prp_dev,
+			   "Cannot create hsr-prp node_table directory\n");
 		return rc;
 	}
 	priv->node_tbl_file = de;
@@ -109,8 +109,7 @@ int hsr_prp_debugfs_init(struct hsr_prp_priv *priv)
 	return rc;
 } /* end of hst_prp_debugfs_init */
 
-/*
- * hsr_prp_debugfs_term - Tear down debugfs intrastructure
+/* hsr_prp_debugfs_term - Tear down debugfs intrastructure
  *
  * Description:
  * When Debufs is configured this routine removes debugfs file system

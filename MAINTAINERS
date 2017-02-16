@@ -5842,6 +5842,7 @@ F:	drivers/net/usb/hso.c
 
 HSR NETWORK PROTOCOL
 M:	Arvid Brodin <arvid.brodin@alten.se>
+M:	Murali Karicheri <m-karicheri2@ti.com>
 L:	netdev@vger.kernel.org
 S:	Maintained
 F:	net/hsr/
