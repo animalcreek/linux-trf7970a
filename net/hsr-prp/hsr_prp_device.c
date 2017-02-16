@@ -292,7 +292,7 @@ static void send_supervision_frame(struct hsr_prp_port *master,
 		hsr_tag = (typeof(hsr_tag))skb_put(skb,
 						   sizeof(struct hsr_tag));
 		hsr_tag->encap_proto = htons(ETH_P_PRP);
-		set_hsr_tag_LSDU_size(hsr_tag, HSR_V1_SUP_LSDUSIZE);
+		set_hsr_tag_LSDU_size(hsr_tag, HSR_PRP_V1_SUP_LSDUSIZE);
 	}
 
 	hsr_stag = (typeof(hsr_stag))skb_put(skb,
@@ -331,7 +331,7 @@ static void send_supervision_frame(struct hsr_prp_port *master,
 		tail = skb_tail_pointer(skb) - HSR_PRP_HLEN;
 		rct = (struct prp_rct *)tail;
 		rct->PRP_suffix = htons(ETH_P_PRP);
-		set_prp_LSDU_size(rct, HSR_V1_SUP_LSDUSIZE);
+		set_prp_LSDU_size(rct, HSR_PRP_V1_SUP_LSDUSIZE);
 		rct->sequence_nr = htons(master->priv->sequence_nr);
 		master->priv->sequence_nr++;
 	}
@@ -496,6 +496,13 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 				       slave[1]->dev_addr);
 	if (res < 0)
 		return res;
+
+	if (priv->prot_version == PRP_V1) {
+		/* For PRP, lan_id has most significant 3 bits holding
+		 * the net_id of PRP_LAN_ID
+		 */
+		priv->net_id = PRP_LAN_ID << 1;
+	}
 
 	spin_lock_init(&priv->seqnr_lock);
 	/* Overflow soon to find bugs easier: */

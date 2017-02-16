@@ -37,7 +37,10 @@ hsr_prp_node_table_show(struct seq_file *sfp, void *data)
 	seq_puts(sfp, "Node Table entries\n");
 	seq_puts(sfp, "MAC-Address-A,   MAC-Address-B, time_in[A], ");
 	seq_puts(sfp, "time_in[B], Address-B port");
-	seq_puts(sfp, "\n");
+	if (priv->prot_version == PRP_V1)
+		seq_puts(sfp, ", san_a, san_b\n");
+	else
+		seq_puts(sfp, "\n");
 	rcu_read_lock();
 	list_for_each_entry_rcu(node, &priv->node_db, mac_list) {
 		/* skip self node */
@@ -49,7 +52,11 @@ hsr_prp_node_table_show(struct seq_file *sfp, void *data)
 		seq_printf(sfp, "0x%lx, ", node->time_in[HSR_PRP_PT_SLAVE_A]);
 		seq_printf(sfp, "0x%lx ", node->time_in[HSR_PRP_PT_SLAVE_B]);
 		seq_printf(sfp, "0x%x", node->addr_b_port);
-		seq_puts(sfp, "\n");
+
+		if (priv->prot_version == PRP_V1)
+			seq_printf(sfp, ", %x, %x\n", node->san_a, node->san_b);
+		else
+			seq_puts(sfp, "\n");
 	}
 	rcu_read_unlock();
 	return 0;
@@ -87,7 +94,11 @@ int hsr_prp_debugfs_init(struct hsr_prp_priv *priv,
 	int rc = -1;
 	struct dentry *de = NULL;
 
-	de = debugfs_create_dir("hsr", NULL);
+	if (priv->prot_version <= HSR_V1)
+		de = debugfs_create_dir("hsr", NULL);
+	else
+		de = debugfs_create_dir("prp", NULL);
+
 	if (!de) {
 		netdev_err(hsr_prp_dev, "Cannot create hsr-prp debugfs root\n");
 		return rc;
