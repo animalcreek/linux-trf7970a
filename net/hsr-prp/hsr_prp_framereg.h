@@ -17,9 +17,12 @@
 struct hsr_prp_node;
 
 struct hsr_prp_node *hsr_prp_add_node(struct list_head *node_db,
-				      unsigned char addr[], u16 seq_out);
+				      unsigned char addr[], u16 seq_out,
+				      bool san,
+				      enum hsr_prp_port_type rx_port);
 struct hsr_prp_node *hsr_prp_get_node(struct list_head *node_db,
-				      struct sk_buff *skb, bool is_sup);
+				      struct sk_buff *skb, bool is_sup,
+				      enum hsr_prp_port_type rx_port);
 void hsr_prp_handle_sup_frame(struct sk_buff *skb,
 			      struct hsr_prp_node *node_curr,
 			      struct hsr_prp_port *port);
@@ -57,8 +60,15 @@ struct hsr_prp_node {
 	unsigned char		mac_address_b[ETH_ALEN];
 	/* Local slave through which AddrB frames are received from this node */
 	enum hsr_prp_port_type	addr_b_port;
+	u32			cnt_received_a;
+	u32			cnt_received_b;
+	u32			cnt_err_wrong_lan_a;
+	u32			cnt_err_wrong_lan_b;
 	unsigned long		time_in[HSR_PRP_PT_PORTS];
 	bool			time_in_stale[HSR_PRP_PT_PORTS];
+	/* if the node is a SAN */
+	bool			san_a;
+	bool			san_b;
 	u16			seq_out[HSR_PRP_PT_PORTS];
 	struct rcu_head		rcu_head;
 };
