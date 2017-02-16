@@ -1,13 +1,10 @@
 /*
- * hsr_main.c: hsr initialization code. This is moved from
- * hsr_prp_main.c
+ * prp_main.c: hsr initialization code. This is based on hsr_main.c
  *
  * Copyright (C) 2017 Texas Instruments Incorporated
- * Copyright 2011-2014 Autronica Fire and Security AS
  *
  * Author(s):
- *	2011-2014 Arvid Brodin, arvid.brodin@alten.se
- *	Murali Karicheri <m-karicheri2@ti.com?
+ *	Murali Karicheri <m-karicheri2@ti.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -18,29 +15,26 @@
  * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
 #include <linux/netdevice.h>
 #include "hsr_prp_main.h"
-#include "hsr_netlink.h"
+#include "prp_netlink.h"
 
-static int __init hsr_init(void)
+static int __init prp_init(void)
 {
 	int res;
 
-	BUILD_BUG_ON(sizeof(struct hsr_tag) != HSR_PRP_HLEN);
-
-	res = hsr_prp_register_notifier(HSR);
+	res = hsr_prp_register_notifier(PRP);
 	if (!res)
-		res = hsr_netlink_init();
+		res = prp_netlink_init();
 
 	return res;
 }
 
-static void __exit hsr_exit(void)
+static void __exit prp_exit(void)
 {
-	hsr_prp_unregister_notifier(HSR);
-	hsr_netlink_exit();
+	hsr_prp_unregister_notifier(PRP);
+	prp_netlink_exit();
 }
 
-module_init(hsr_init);
+module_init(prp_init);
 MODULE_LICENSE("GPL");

@@ -15,7 +15,8 @@
 #include <linux/netdevice.h>
 #include "hsr_prp_main.h"
 
-void hsr_prp_dev_setup(struct net_device *dev);
+void hsr_dev_setup(struct net_device *dev);
+void prp_dev_setup(struct net_device *dev);
 int hsr_prp_dev_finalize(struct net_device *dev, struct net_device *slave[2],
 			 unsigned char multicast_spec, u8 protocol_version);
 void hsr_prp_check_carrier_and_operstate(struct hsr_prp_priv *priv);
