@@ -116,7 +116,8 @@ int hsr_prp_create_self_node(struct list_head *self_node_db,
  */
 struct hsr_prp_node *hsr_prp_add_node(struct list_head *node_db,
 				      unsigned char addr[],
-				      u16 seq_out)
+				      u16 seq_out, bool san,
+				      enum hsr_prp_port_type rx_port)
 {
 	struct hsr_prp_node *node;
 	unsigned long now;
@@ -136,6 +137,16 @@ struct hsr_prp_node *hsr_prp_add_node(struct list_head *node_db,
 		node->time_in[i] = now;
 	for (i = 0; i < HSR_PRP_PT_PORTS; i++)
 		node->seq_out[i] = seq_out;
+	if (san) {
+		/* Mark if the SAN node is over LAN_A or LAN_B */
+		if (rx_port == HSR_PRP_PT_SLAVE_A)
+			node->san_a = true;
+		else if (rx_port == HSR_PRP_PT_SLAVE_B)
+			node->san_b = true;
+	} else {
+			node->san_a = false;
+			node->san_b = false;
+	}
 
 	list_add_tail_rcu(&node->mac_list, node_db);
 
@@ -146,10 +157,13 @@ struct hsr_prp_node *hsr_prp_add_node(struct list_head *node_db,
  */
 struct hsr_prp_node *hsr_prp_get_node(struct list_head *node_db,
 				      struct sk_buff *skb,
-				      bool is_sup)
+				      bool is_sup,
+				      enum hsr_prp_port_type rx_port)
 {
 	struct hsr_prp_node *node;
 	struct ethhdr *ethhdr;
+	struct prp_rct *rct;
+	bool san = false;
 	u16 seq_out;
 
 	if (!skb_mac_header_was_set(skb))
@@ -166,15 +180,24 @@ struct hsr_prp_node *hsr_prp_get_node(struct list_head *node_db,
 
 	/* Everyone may create a node entry, connected node to a HSR device. */
 	if (ethhdr->h_proto == htons(ETH_P_PRP) ||
-	    ethhdr->h_proto == htons(ETH_P_HSR))
+	    ethhdr->h_proto == htons(ETH_P_HSR)) {
 		/* Use the existing sequence_nr from the tag as starting point
 		 * for filtering duplicate frames.
 		 */
 		seq_out = hsr_get_skb_sequence_nr(skb) - 1;
-	else
-		seq_out = HSR_PRP_SEQNR_START;
+	} else {
+		rct = skb_get_PRP_rct(skb);
+		if (rct && prp_check_lsdu_size_integrity(skb, is_sup)) {
+			seq_out = prp_get_skb_sequence_nr(rct);
+		} else {
+			if (rx_port != HSR_PRP_PT_MASTER)
+				san = true;
+			seq_out = HSR_PRP_SEQNR_START;
+		}
+	}
 
-	return hsr_prp_add_node(node_db, ethhdr->h_source, seq_out);
+	return hsr_prp_add_node(node_db, ethhdr->h_source, seq_out,
+				san, rx_port);
 }
 
 /* Use the Supervision frame's info about an eventual mac_address_b for merging
@@ -211,7 +234,8 @@ void hsr_prp_handle_sup_frame(struct sk_buff *skb,
 	if (!node_real)
 		/* No frame received from AddrA of this node yet */
 		node_real = hsr_prp_add_node(node_db, hsr_sp->mac_address_a,
-					     HSR_PRP_SEQNR_START - 1);
+					     HSR_PRP_SEQNR_START - 1, true,
+					     port_rcv->type);
 	if (!node_real)
 		goto done; /* No mem */
 	if (node_real == node_curr)
