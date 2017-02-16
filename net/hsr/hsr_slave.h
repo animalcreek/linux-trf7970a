@@ -17,21 +17,23 @@
 #include <linux/rtnetlink.h>
 #include "hsr_main.h"
 
-int hsr_add_port(struct hsr_priv *hsr, struct net_device *dev,
-		 enum hsr_port_type pt);
-void hsr_del_port(struct hsr_port *port);
-bool hsr_port_exists(const struct net_device *dev);
+int hsr_prp_add_port(struct hsr_prp_priv *priv, struct net_device *dev,
+		     enum hsr_prp_port_type pt);
+void hsr_prp_del_port(struct hsr_prp_port *port);
+bool hsr_prp_port_exists(const struct net_device *dev);
 
-static inline struct hsr_port *hsr_port_get_rtnl(const struct net_device *dev)
+static inline struct hsr_prp_port
+*hsr_prp_port_get_rtnl(const struct net_device *dev)
 {
 	ASSERT_RTNL();
-	return hsr_port_exists(dev) ?
+	return hsr_prp_port_exists(dev) ?
 				rtnl_dereference(dev->rx_handler_data) : NULL;
 }
 
-static inline struct hsr_port *hsr_port_get_rcu(const struct net_device *dev)
+static inline struct hsr_prp_port
+*hsr_prp_port_get_rcu(const struct net_device *dev)
 {
-	return hsr_port_exists(dev) ?
+	return hsr_prp_port_exists(dev) ?
 				rcu_dereference(dev->rx_handler_data) : NULL;
 }
 

@@ -17,11 +17,10 @@
 #include "hsr_forward.h"
 #include "hsr_framereg.h"
 
-
-static rx_handler_result_t hsr_handle_frame(struct sk_buff **pskb)
+static rx_handler_result_t hsr_prp_handle_frame(struct sk_buff **pskb)
 {
 	struct sk_buff *skb = *pskb;
-	struct hsr_port *port;
+	struct hsr_prp_port *port;
 	u16 protocol;
 
 	if (!skb_mac_header_was_set(skb)) {
@@ -30,9 +29,9 @@ static rx_handler_result_t hsr_handle_frame(struct sk_buff **pskb)
 	}
 
 	rcu_read_lock(); /* hsr->node_db, hsr->ports */
-	port = hsr_port_get_rcu(skb->dev);
+	port = hsr_prp_port_get_rcu(skb->dev);
 
-	if (hsr_addr_is_self(port->hsr, eth_hdr(skb)->h_source)) {
+	if (hsr_prp_addr_is_self(port->priv, eth_hdr(skb)->h_source)) {
 		/* Directly kill frames sent by ourselves */
 		kfree_skb(skb);
 		goto finish_consume;
@@ -44,7 +43,7 @@ static rx_handler_result_t hsr_handle_frame(struct sk_buff **pskb)
 
 	skb_push(skb, ETH_HLEN);
 
-	hsr_forward_skb(skb, port);
+	hsr_prp_forward_skb(skb, port);
 
 finish_consume:
 	rcu_read_unlock(); /* hsr->node_db, hsr->ports */
@@ -55,13 +54,12 @@ finish_pass:
 	return RX_HANDLER_PASS;
 }
 
-bool hsr_port_exists(const struct net_device *dev)
+bool hsr_prp_port_exists(const struct net_device *dev)
 {
-	return rcu_access_pointer(dev->rx_handler) == hsr_handle_frame;
+	return rcu_access_pointer(dev->rx_handler) == hsr_prp_handle_frame;
 }
 
-
-static int hsr_check_dev_ok(struct net_device *dev)
+static int hsr_prp_check_dev_ok(struct net_device *dev)
 {
 	/* Don't allow HSR on non-ethernet like devices */
 	if ((dev->flags & IFF_LOOPBACK) || (dev->type != ARPHRD_ETHER) ||
@@ -71,12 +69,12 @@ static int hsr_check_dev_ok(struct net_device *dev)
 	}
 
 	/* Don't allow enslaving hsr devices */
-	if (is_hsr_master(dev)) {
+	if (is_hsr_prp_master(dev)) {
 		netdev_info(dev, "Cannot create trees of HSR devices.\n");
 		return -EINVAL;
 	}
 
-	if (hsr_port_exists(dev)) {
+	if (hsr_prp_port_exists(dev)) {
 		netdev_info(dev, "This device is already a HSR slave.\n");
 		return -EINVAL;
 	}
@@ -100,7 +98,8 @@ static int hsr_check_dev_ok(struct net_device *dev)
 
 
 /* Setup device to be added to the HSR bridge. */
-static int hsr_portdev_setup(struct net_device *dev, struct hsr_port *port)
+static int hsr_prp_portdev_setup(struct net_device *dev,
+				 struct hsr_prp_port *port)
 {
 	int res;
 
@@ -114,7 +113,7 @@ static int hsr_portdev_setup(struct net_device *dev, struct hsr_port *port)
 	 * res = netdev_master_upper_dev_link(port->dev, port->hsr->dev); ?
 	 */
 
-	res = netdev_rx_handler_register(dev, hsr_handle_frame, port);
+	res = netdev_rx_handler_register(dev, hsr_prp_handle_frame, port);
 	if (res)
 		goto fail_rx_handler;
 	dev_disable_lro(dev);
@@ -129,19 +128,19 @@ fail_promiscuity:
 	return res;
 }
 
-int hsr_add_port(struct hsr_priv *hsr, struct net_device *dev,
-		 enum hsr_port_type type)
+int hsr_prp_add_port(struct hsr_prp_priv *priv, struct net_device *dev,
+		     enum hsr_prp_port_type type)
 {
-	struct hsr_port *port, *master;
+	struct hsr_prp_port *port, *master;
 	int res;
 
-	if (type != HSR_PT_MASTER) {
-		res = hsr_check_dev_ok(dev);
+	if (type != HSR_PRP_PT_MASTER) {
+		res = hsr_prp_check_dev_ok(dev);
 		if (res)
 			return res;
 	}
 
-	port = hsr_port_get_hsr(hsr, type);
+	port = hsr_prp_get_port(priv, type);
 	if (port != NULL)
 		return -EBUSY;	/* This port already exists */
 
@@ -149,22 +148,22 @@ int hsr_add_port(struct hsr_priv *hsr, struct net_device *dev,
 	if (port == NULL)
 		return -ENOMEM;
 
-	if (type != HSR_PT_MASTER) {
-		res = hsr_portdev_setup(dev, port);
+	if (type != HSR_PRP_PT_MASTER) {
+		res = hsr_prp_portdev_setup(dev, port);
 		if (res)
 			goto fail_dev_setup;
 	}
 
-	port->hsr = hsr;
+	port->priv = priv;
 	port->dev = dev;
 	port->type = type;
 
-	list_add_tail_rcu(&port->port_list, &hsr->ports);
+	list_add_tail_rcu(&port->port_list, &priv->ports);
 	synchronize_rcu();
 
-	master = hsr_port_get_hsr(hsr, HSR_PT_MASTER);
+	master = hsr_prp_get_port(priv, HSR_PRP_PT_MASTER);
 	netdev_update_features(master->dev);
-	dev_set_mtu(master->dev, hsr_get_max_mtu(hsr));
+	dev_set_mtu(master->dev, hsr_prp_get_max_mtu(priv));
 
 	return 0;
 
@@ -173,26 +172,26 @@ fail_dev_setup:
 	return res;
 }
 
-void hsr_del_port(struct hsr_port *port)
+void hsr_prp_del_port(struct hsr_prp_port *port)
 {
-	struct hsr_priv *hsr;
-	struct hsr_port *master;
+	struct hsr_prp_priv *priv;
+	struct hsr_prp_port *master;
 
-	hsr = port->hsr;
-	master = hsr_port_get_hsr(hsr, HSR_PT_MASTER);
+	priv = port->priv;
+	master = hsr_prp_get_port(priv, HSR_PRP_PT_MASTER);
 	list_del_rcu(&port->port_list);
 
 	if (port != master) {
 		if (master != NULL) {
 			netdev_update_features(master->dev);
-			dev_set_mtu(master->dev, hsr_get_max_mtu(hsr));
+			dev_set_mtu(master->dev, hsr_prp_get_max_mtu(priv));
 		}
 		netdev_rx_handler_unregister(port->dev);
 		dev_set_promiscuity(port->dev, -1);
 	}
 
 	/* FIXME?
-	 * netdev_upper_dev_unlink(port->dev, port->hsr->dev);
+	 * netdev_upper_dev_unlink(port->dev, port->priv->dev);
 	 */
 
 	synchronize_rcu();

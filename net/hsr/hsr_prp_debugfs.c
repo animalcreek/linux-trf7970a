@@ -31,8 +31,8 @@ static void print_mac_address(struct seq_file *sfp, unsigned char *mac)
 static int
 hsr_prp_node_table_show (struct seq_file *sfp, void *data)
 {
-	struct hsr_priv *priv = (struct hsr_priv *) sfp->private;
-	struct hsr_node *node;
+	struct hsr_prp_priv *priv = (struct hsr_prp_priv *)sfp->private;
+	struct hsr_prp_node *node;
 
 	seq_printf(sfp, "Node Table entries\n");
 	seq_printf(sfp, "MAC-Address-A,   MAC-Address-B, time_in[A], ");
@@ -41,13 +41,13 @@ hsr_prp_node_table_show (struct seq_file *sfp, void *data)
 	rcu_read_lock();
 	list_for_each_entry_rcu(node, &priv->node_db, mac_list) {
 		/* skip self node */
-		if (hsr_addr_is_self(priv, node->mac_address_a))
+		if (hsr_prp_addr_is_self(priv, node->mac_address_a))
 			continue;
 		print_mac_address(sfp, &node->mac_address_a[0]);
 		seq_printf(sfp, " ");
 		print_mac_address(sfp, &node->mac_address_b[0]);
-		seq_printf(sfp, "0x%lx, ", node->time_in[HSR_PT_SLAVE_A]);
-		seq_printf(sfp, "0x%lx ", node->time_in[HSR_PT_SLAVE_B]);
+		seq_printf(sfp, "0x%lx, ", node->time_in[HSR_PRP_PT_SLAVE_A]);
+		seq_printf(sfp, "0x%lx ", node->time_in[HSR_PRP_PT_SLAVE_B]);
 		seq_printf(sfp, "0x%x", node->addr_b_port);
 		seq_printf(sfp, "\n");
 	}
@@ -83,7 +83,7 @@ static const struct file_operations hsr_prp_fops = {
  * When debugfs is configured this routine sets up the node_table file per
  * hsr/prp device for dumping the node_table entries
  */
-int hsr_prp_debugfs_init(struct hsr_priv *priv)
+int hsr_prp_debugfs_init(struct hsr_prp_priv *priv)
 {
 	int rc = -1;
 	struct dentry *de = NULL;
@@ -117,7 +117,7 @@ int hsr_prp_debugfs_init(struct hsr_priv *priv)
  * elements that are specific to hsr-prp
  */
 void
-hsr_prp_debugfs_term(struct hsr_priv *priv)
+hsr_prp_debugfs_term(struct hsr_prp_priv *priv)
 {
 	debugfs_remove(priv->node_tbl_file);
 	priv->node_tbl_file = NULL;
