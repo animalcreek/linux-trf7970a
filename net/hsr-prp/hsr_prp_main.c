@@ -23,6 +23,10 @@ static struct notifier_block hsr_nb = {
 	.notifier_call = hsr_prp_netdev_notify,	/* Slave event notifications */
 };
 
+static struct notifier_block prp_nb = {
+	.notifier_call = hsr_prp_netdev_notify,	/* Slave event notifications */
+};
+
 int hsr_prp_netdev_notify(struct notifier_block *nb, unsigned long event,
 			  void *ptr)
 {
@@ -46,6 +50,13 @@ int hsr_prp_netdev_notify(struct notifier_block *nb, unsigned long event,
 	} else {
 		priv = port->priv;
 	}
+
+	if ((priv->prot_version <= HSR_V1) &&
+	    (nb != &hsr_nb))
+		return NOTIFY_DONE;
+	else if ((priv->prot_version == PRP_V1) &&
+		 (nb != &prp_nb))
+		return NOTIFY_DONE;
 
 	switch (event) {
 	case NETDEV_UP:		/* Administrative state DOWN */
@@ -112,12 +123,18 @@ struct hsr_prp_port *hsr_prp_get_port(struct hsr_prp_priv *priv,
 	return NULL;
 }
 
-int hsr_prp_register_notifier(void)
+int hsr_prp_register_notifier(u8 proto)
 {
+	if (proto == PRP)
+		return register_netdevice_notifier(&prp_nb);
+
 	return register_netdevice_notifier(&hsr_nb);
 }
 
-void hsr_prp_unregister_notifier(void)
+void hsr_prp_unregister_notifier(u8 proto)
 {
+	if (proto == PRP)
+		unregister_netdevice_notifier(&prp_nb);
+
 	unregister_netdevice_notifier(&hsr_nb);
 }

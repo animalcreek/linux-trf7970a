@@ -334,7 +334,7 @@ static void hsr_prp_announce(unsigned long data)
 	rcu_read_lock();
 	master = hsr_prp_get_port(priv, HSR_PRP_PT_MASTER);
 
-	if (priv->announce_count < 3 && priv->prot_version == 0) {
+	if (priv->announce_count < 3 && priv->prot_version == HSR_V0) {
 		send_supervision_frame(master, HSR_TLV_ANNOUNCE,
 				       priv->prot_version);
 		priv->announce_count++;
@@ -387,18 +387,14 @@ static const struct net_device_ops hsr_prp_device_ops = {
 	.ndo_fix_features = hsr_prp_fix_features,
 };
 
-static struct device_type hsr_type = {
-	.name = "hsr",
-};
-
-void hsr_prp_dev_setup(struct net_device *ndev)
+static void hsr_prp_dev_setup(struct net_device *ndev, struct device_type *type)
 {
 	random_ether_addr(ndev->dev_addr);
 
 	ether_setup(ndev);
 	ndev->header_ops = &hsr_prp_header_ops;
 	ndev->netdev_ops = &hsr_prp_device_ops;
-	SET_NETDEV_DEVTYPE(ndev, &hsr_type);
+	SET_NETDEV_DEVTYPE(ndev, type);
 	ndev->priv_flags |= IFF_NO_QUEUE;
 
 	ndev->destructor = hsr_prp_dev_destroy;
@@ -421,6 +417,24 @@ void hsr_prp_dev_setup(struct net_device *ndev)
 	ndev->features |= NETIF_F_NETNS_LOCAL;
 }
 
+static struct device_type hsr_type = {
+	.name = "hsr",
+};
+
+void hsr_dev_setup(struct net_device *dev)
+{
+	hsr_prp_dev_setup(dev, &hsr_type);
+}
+
+static struct device_type prp_type = {
+	.name = "prp",
+};
+
+void prp_dev_setup(struct net_device *dev)
+{
+	hsr_prp_dev_setup(dev, &prp_type);
+}
+
 /* Return true if dev is a HSR master; return false otherwise.
  */
 inline bool is_hsr_prp_master(struct net_device *dev)
@@ -440,6 +454,10 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 	struct hsr_prp_priv *priv;
 	struct hsr_prp_port *port;
 	int res;
+
+	/* PRP not supported yet */
+	if (protocol_version == PRP_V1)
+		return -EPROTONOSUPPORT;
 
 	priv = netdev_priv(hsr_prp_dev);
 	INIT_LIST_HEAD(&priv->ports);
