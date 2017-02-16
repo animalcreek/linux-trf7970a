@@ -194,6 +194,8 @@ static inline u16 hsr_get_skb_sequence_nr(struct sk_buff *skb)
 	return ntohs(hsr_ethhdr->hsr_tag.sequence_nr);
 }
 
+int hsr_prp_register_notifier(void);
+void hsr_prp_unregister_notifier(void);
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 int hsr_prp_debugfs_init(struct hsr_prp_priv *priv,
 			 struct net_device *hsr_prp_dev);
