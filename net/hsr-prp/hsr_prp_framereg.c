@@ -187,7 +187,7 @@ struct hsr_prp_node *hsr_prp_get_node(struct list_head *node_db,
 		seq_out = hsr_get_skb_sequence_nr(skb) - 1;
 	} else {
 		rct = skb_get_PRP_rct(skb);
-		if (rct && prp_check_lsdu_size_integrity(skb, is_sup)) {
+		if (rct && prp_check_lsdu_size(skb, rct, is_sup)) {
 			seq_out = prp_get_skb_sequence_nr(rct);
 		} else {
 			if (rx_port != HSR_PRP_PT_MASTER)

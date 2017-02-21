@@ -279,15 +279,18 @@ static inline u16 prp_get_skb_sequence_nr(struct prp_rct *rct)
 	return ntohs(rct->sequence_nr);
 }
 
-static inline bool prp_check_lsdu_size_integrity(struct sk_buff *skb,
-						 bool is_sup)
+static inline u16 get_prp_lan_id(struct prp_rct *rct)
+{
+	return ntohs(rct->lan_id_and_LSDU_size) >> 12;
+}
+
+/* assume there is a valid rct */
+static inline bool prp_check_lsdu_size(struct sk_buff *skb,
+				       struct prp_rct *rct,
+				       bool is_sup)
 {
 	struct ethhdr *ethhdr;
 	int expected_lsdu_size;
-	struct prp_rct *rct = skb_get_PRP_rct(skb);
-
-	if (!rct)
-		return false;
 
 	if (is_sup) {
 		expected_lsdu_size = HSR_PRP_V1_SUP_LSDUSIZE;

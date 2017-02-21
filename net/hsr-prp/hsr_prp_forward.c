@@ -151,16 +151,32 @@ static struct sk_buff *frame_get_stripped_skb(struct hsr_prp_frame_info *frame,
 	return skb_clone(frame->skb_std, GFP_ATOMIC);
 }
 
-/* Tailroom for PRP rct should have been created before calling this */
-static void prp_fill_rct(struct sk_buff *skb,
-			 struct hsr_prp_frame_info *frame,
-			 struct hsr_prp_port *port)
+/* only prp skb should be passed in */
+static void prp_check_lan_id(struct sk_buff *skb, struct hsr_prp_port *port)
 {
-	struct prp_rct *trailor;
-	int lsdu_size, lane_id;
+	int lan_id;
+	struct prp_rct *trailor = skb_get_PRP_rct(skb);
 
-	if (!skb)
+	if (!trailor) {
+		INC_CNT_RX_ERROR(port->type, port->priv);
 		return;
+	}
+
+	lan_id = get_prp_lan_id(trailor);
+
+	if (port->type == HSR_PRP_PT_SLAVE_A) {
+		if (lan_id & 1)
+			INC_CNT_RX_WRONG_LAN(port->type, port->priv);
+	} else {
+		if (!(lan_id & 1))
+			INC_CNT_RX_WRONG_LAN(port->type, port->priv);
+	}
+}
+
+static void prp_set_lan_id(struct prp_rct *trailor,
+			   struct hsr_prp_port *port)
+{
+	int lane_id;
 
 	if (port->type == HSR_PRP_PT_SLAVE_A)
 		lane_id = 0;
@@ -168,6 +184,20 @@ static void prp_fill_rct(struct sk_buff *skb,
 		lane_id = 1;
 	/* Add net_id in the upper 3 bits of lane_id */
 	lane_id |= port->priv->net_id;
+
+	set_prp_lan_id(trailor, lane_id);
+}
+
+/* Tailroom for PRP rct should have been created before calling this */
+static void prp_fill_rct(struct sk_buff *skb,
+			 struct hsr_prp_frame_info *frame,
+			 struct hsr_prp_port *port)
+{
+	struct prp_rct *trailor;
+	int lsdu_size;
+
+	if (!skb)
+		return;
 
 	if (frame->is_vlan)
 		skb_put_padto(skb, ETH_ZLEN + 4);
@@ -178,23 +208,48 @@ static void prp_fill_rct(struct sk_buff *skb,
 	lsdu_size = skb->len - 14 + HSR_PRP_HLEN;
 	if (frame->is_vlan)
 		lsdu_size -= 4;
-	set_prp_lan_id(trailor, lane_id);
+	prp_set_lan_id(trailor, port);
 	set_prp_LSDU_size(trailor, lsdu_size);
 	trailor->sequence_nr = htons(frame->sequence_nr);
 	trailor->PRP_suffix = htons(ETH_P_PRP);
+}
+
+static void hsr_set_lan_id(struct hsr_ethhdr *hsr_ethhdr,
+			   struct hsr_prp_port *port)
+{
+	int lane_id;
+
+	if (port->type == HSR_PRP_PT_SLAVE_A)
+		lane_id = 0;
+	else
+		lane_id = 1;
+
+	set_hsr_tag_path(&hsr_ethhdr->hsr_tag, lane_id);
+}
+
+/* only hsr skb should be passed in */
+static void hsr_check_path_id(struct sk_buff *skb, struct hsr_prp_port *port)
+{
+	struct hsr_ethhdr *hsr_ethhdr;
+	int path_id;
+
+	hsr_ethhdr = (struct hsr_ethhdr *)skb_mac_header(skb);
+	path_id = get_hsr_tag_path(&hsr_ethhdr->hsr_tag);
+
+	if (port->type == HSR_PRP_PT_SLAVE_A) {
+		if (path_id & 1)
+			INC_CNT_RX_WRONG_LAN(port->type, port->priv);
+	} else {
+		if (!(path_id & 1))
+			INC_CNT_RX_WRONG_LAN(port->type, port->priv);
+	}
 }
 
 static void hsr_fill_tag(struct sk_buff *skb, struct hsr_prp_frame_info *frame,
 			 struct hsr_prp_port *port, u8 proto_version)
 {
 	struct hsr_ethhdr *hsr_ethhdr;
-	int lane_id;
 	int lsdu_size;
-
-	if (port->type == HSR_PRP_PT_SLAVE_A)
-		lane_id = 0;
-	else
-		lane_id = 1;
 
 	lsdu_size = skb->len - 14;
 	if (frame->is_vlan)
@@ -202,7 +257,7 @@ static void hsr_fill_tag(struct sk_buff *skb, struct hsr_prp_frame_info *frame,
 
 	hsr_ethhdr = (struct hsr_ethhdr *)skb_mac_header(skb);
 
-	set_hsr_tag_path(&hsr_ethhdr->hsr_tag, lane_id);
+	hsr_set_lan_id(hsr_ethhdr, port);
 	set_hsr_tag_LSDU_size(&hsr_ethhdr->hsr_tag, lsdu_size);
 	hsr_ethhdr->hsr_tag.sequence_nr = htons(frame->sequence_nr);
 	hsr_ethhdr->hsr_tag.encap_proto = hsr_ethhdr->ethhdr.h_proto;
@@ -256,10 +311,26 @@ static struct sk_buff *create_tagged_skb(struct sk_buff *skb_o,
 static struct sk_buff *frame_get_tagged_skb(struct hsr_prp_frame_info *frame,
 					    struct hsr_prp_port *port)
 {
-	if (frame->skb_hsr)
+	if (frame->skb_hsr) {
+		struct hsr_ethhdr *hsr_ethhdr =
+			(struct hsr_ethhdr *)skb_mac_header(frame->skb_hsr);
+
+		/* set the lane id properly */
+		hsr_set_lan_id(hsr_ethhdr, port);
 		return skb_clone(frame->skb_hsr, GFP_ATOMIC);
-	if (frame->skb_prp)
+	}
+
+	if (frame->skb_prp) {
+		struct prp_rct *trailor = skb_get_PRP_rct(frame->skb_prp);
+
+		if (trailor) {
+			prp_set_lan_id(trailor, port);
+		} else {
+			WARN_ONCE(!trailor, "errored PRP skb");
+			return NULL;
+		}
 		return skb_clone(frame->skb_prp, GFP_ATOMIC);
+	}
 
 	if ((port->type != HSR_PRP_PT_SLAVE_A) &&
 	    (port->type != HSR_PRP_PT_SLAVE_B)) {
@@ -484,7 +555,7 @@ static int hsr_prp_fill_frame_info(struct hsr_prp_frame_info *frame,
 		struct prp_rct *rct = skb_get_PRP_rct(skb);
 
 		if (rct &&
-		    prp_check_lsdu_size_integrity(skb, frame->is_supervision)) {
+		    prp_check_lsdu_size(skb, rct, frame->is_supervision)) {
 			frame->skb_hsr = NULL;
 			frame->skb_std = NULL;
 			frame->skb_prp = skb;
@@ -499,7 +570,7 @@ static int hsr_prp_fill_frame_info(struct hsr_prp_frame_info *frame,
 		struct prp_rct *rct = skb_get_PRP_rct(skb);
 
 		if (rct &&
-		    prp_check_lsdu_size_integrity(skb, frame->is_supervision)) {
+		    prp_check_lsdu_size(skb, rct, frame->is_supervision)) {
 			frame->skb_hsr = NULL;
 			frame->skb_std = NULL;
 			frame->skb_prp = skb;
@@ -543,6 +614,18 @@ void hsr_prp_forward_skb(struct sk_buff *skb, struct hsr_prp_port *port)
 
 	if (hsr_prp_fill_frame_info(&frame, skb, port) < 0)
 		goto out_drop;
+
+	if (frame.skb_hsr) {
+		if (port->type == HSR_PRP_PT_SLAVE_A ||
+		    port->type == HSR_PRP_PT_SLAVE_B)
+			hsr_check_path_id(frame.skb_hsr, port);
+	}
+	if (frame.skb_prp) {
+		if (port->type == HSR_PRP_PT_SLAVE_A  ||
+		    port->type == HSR_PRP_PT_SLAVE_B)
+			prp_check_lan_id(frame.skb_prp, port);
+	}
+
 	/* No need to register frame when rx offload is supported */
 	if (!port->priv->rx_offloaded)
 		hsr_register_frame_in(frame.node_src, port, frame.sequence_nr);
