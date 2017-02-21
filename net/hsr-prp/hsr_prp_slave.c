@@ -21,17 +21,20 @@ static rx_handler_result_t hsr_prp_handle_frame(struct sk_buff **pskb)
 {
 	struct sk_buff *skb = *pskb;
 	struct hsr_prp_port *port;
-	u16 protocol;
+	struct hsr_prp_priv *priv;
 
-	if (!skb_mac_header_was_set(skb)) {
-		WARN_ONCE(1, "%s: skb invalid", __func__);
-		return RX_HANDLER_PASS;
-	}
+	u16 protocol;
 
 	rcu_read_lock(); /* hsr->node_db, hsr->ports */
 	port = hsr_prp_port_get_rcu(skb->dev);
+	priv = port->priv;
 
-	if (hsr_prp_addr_is_self(port->priv, eth_hdr(skb)->h_source)) {
+	if (!skb_mac_header_was_set(skb)) {
+		WARN_ONCE(1, "%s: skb invalid", __func__);
+		goto finish_pass;
+	}
+
+	if (hsr_prp_addr_is_self(priv, eth_hdr(skb)->h_source)) {
 		/* Directly kill frames sent by ourselves */
 		kfree_skb(skb);
 		goto finish_consume;
@@ -58,13 +61,17 @@ static rx_handler_result_t hsr_prp_handle_frame(struct sk_buff **pskb)
 	if (skb_mac_header(skb) != skb->data)
 		skb_push(skb, ETH_HLEN);
 
+	INC_CNT_RX(port->type, priv);
 	hsr_prp_forward_skb(skb, port);
 
 finish_consume:
+	if (priv->prot_version <= HSR_V1)
+		INC_CNT_OWN_RX(port->type, priv);
 	rcu_read_unlock(); /* hsr->node_db, hsr->ports */
 	return RX_HANDLER_CONSUMED;
 
 finish_pass:
+	INC_CNT_RX_ERROR(port->type, priv);
 	rcu_read_unlock(); /* hsr->node_db, hsr->ports */
 	return RX_HANDLER_PASS;
 }
