@@ -274,9 +274,10 @@ static struct sk_buff *create_tagged_skb(struct sk_buff *skb_o,
 	struct sk_buff *skb;
 
 	if (port->priv->prot_version > HSR_V1) {
-		skb = skb_copy_expand(skb_o, 0,
+		skb = skb_copy_expand(skb_o, skb_headroom(skb_o),
 				      skb_tailroom(skb_o) + HSR_PRP_HLEN,
 				      GFP_ATOMIC);
+
 		prp_fill_rct(skb, frame, port);
 		return skb;
 	}
@@ -539,11 +540,8 @@ static int hsr_prp_fill_frame_info(struct hsr_prp_frame_info *frame,
 	frame->is_vlan = false;
 	proto = ethhdr->h_proto;
 
-	if (proto == htons(ETH_P_8021Q)) {
+	if (proto == htons(ETH_P_8021Q))
 		frame->is_vlan = true;
-		/* FIXME: */
-		WARN_ONCE(1, "HSR: VLAN not yet supported");
-	}
 
 	if (frame->is_vlan) {
 		vlan_hdr = (struct hsr_vlan_ethhdr *)ethhdr;
