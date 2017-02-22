@@ -433,10 +433,7 @@ static void hsr_prp_dev_setup(struct net_device *ndev, struct device_type *type)
 
 	/* Prevent recursive tx locking */
 	ndev->features |= NETIF_F_LLTX;
-	/* VLAN on top of HSR needs testing and probably some work on
-	 * hsr_header_create() etc.
-	 */
-	ndev->features |= NETIF_F_VLAN_CHALLENGED;
+
 	/* Not sure about this. Taken from bridge code. netdev_features.h says
 	 * it means "Does not change network namespaces".
 	 */
