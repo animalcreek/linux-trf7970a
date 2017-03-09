@@ -613,6 +613,11 @@ void hsr_prp_forward_skb(struct sk_buff *skb, struct hsr_prp_port *port)
 	if (hsr_prp_fill_frame_info(&frame, skb, port) < 0)
 		goto out_drop;
 
+	/* Only accept packets for the protocol we have been configured */
+	if ((frame.skb_hsr && port->priv->prot_version == PRP_V1) ||
+	    (frame.skb_prp && port->priv->prot_version <= HSR_V1))
+		goto out_drop;
+
 	if (frame.skb_hsr) {
 		if (port->type == HSR_PRP_PT_SLAVE_A ||
 		    port->type == HSR_PRP_PT_SLAVE_B)
