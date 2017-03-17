@@ -418,10 +418,12 @@ static int hsr_get_node_list(struct sk_buff *skb_in, struct genl_info *info)
 	rcu_read_lock();
 	pos = hsr_prp_get_next_node(priv, NULL, addr);
 	while (pos) {
-		res = nla_put(skb_out, HSR_A_NODE_ADDR, ETH_ALEN, addr);
-		if (res < 0) {
-			rcu_read_unlock();
-			goto nla_put_failure;
+		if (!hsr_prp_addr_is_self(priv, addr)) {
+			res = nla_put(skb_out, HSR_A_NODE_ADDR, ETH_ALEN, addr);
+			if (res < 0) {
+				rcu_read_unlock();
+				goto nla_put_failure;
+			}
 		}
 		pos = hsr_prp_get_next_node(priv, pos, addr);
 	}
