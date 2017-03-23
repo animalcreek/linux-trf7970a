@@ -205,7 +205,7 @@ static void prp_fill_rct(struct sk_buff *skb,
 		skb_put_padto(skb, ETH_ZLEN);
 
 	trailor = (struct prp_rct *)skb_put(skb, HSR_PRP_HLEN);
-	lsdu_size = skb->len - 14 + HSR_PRP_HLEN;
+	lsdu_size = skb->len - 14;
 	if (frame->is_vlan)
 		lsdu_size -= 4;
 	prp_set_lan_id(trailor, port);
