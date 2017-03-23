@@ -295,7 +295,7 @@ static inline bool prp_check_lsdu_size(struct sk_buff *skb,
 		expected_lsdu_size = HSR_PRP_V1_SUP_LSDUSIZE;
 	} else {
 		ethhdr = (struct ethhdr *)skb_mac_header(skb);
-		expected_lsdu_size = skb->len - 14 + HSR_PRP_HLEN;
+		expected_lsdu_size = skb->len - 14;
 		if (ethhdr->h_proto == htons(ETH_P_8021Q))
 			expected_lsdu_size -= 4;
 	}
