@@ -163,23 +163,31 @@
 		pruss = <&pruss2>;
 		sram = <&ocmcram1>;
 		interrupt-parent = <&pruss2_intc>;
+		/*rx-queue-size = /bits/ 16 <254 134 134 254 48>;*/ /* RED */
+		/*rx-queue-size = /bits/ 16 <194 194 194 194 48>;*/ /* EMAC */
 
 		pruss2_emac0: ethernet-mii0 {
 			phy-handle = <&pruss2_eth0_phy>;
 			phy-mode = "mii";
-			interrupts = <20>, <22>;
-			interrupt-names = "rx", "tx";
+			interrupts = <20>, <22>,
+				     <20>, <22>;
+			interrupt-names = "rx", "tx",
+					  "red-rx", "red-tx";
 			/* Filled in by bootloader */
 			local-mac-address = [00 00 00 00 00 00];
+			/*tx-queue-size = /bits/ 16 <97 97 97 97 48>;*/
 		};
 
 		pruss2_emac1: ethernet-mii1 {
 			phy-handle = <&pruss2_eth1_phy>;
 			phy-mode = "mii";
-			interrupts = <21>, <23>;
-			interrupt-names = "rx", "tx";
+			interrupts = <21>, <23>,
+				     <20>, <22>;
+			interrupt-names = "rx", "tx",
+					  "red-rx", "red-tx";
 			/* Filled in by bootloader */
 			local-mac-address = [00 00 00 00 00 00];
+			/*tx-queue-size = /bits/ 16 <97 97 97 97 48>;*/
 		};
 	};
 };
