@@ -16,8 +16,6 @@
 #ifndef __NET_TI_PRUETH_H
 #define __NET_TI_PRUETH_H
 
-#define PRUETH_NUMQUEUES	5
-
 /**
  * struct prueth_queue_desc - Queue descriptor
  * @rd_ptr:	Read pointer, points to a buffer descriptor in Shared PRU RAM.
@@ -59,6 +57,20 @@ struct prueth_queue_info {
 	u16 buffer_desc_end;
 } __packed;
 
+struct prueth_col_rx_context_info {
+	u16 buffer_offset;
+	u16 buffer_offset2;
+	u16 queue_desc_offset;
+	u16 buffer_desc_offset;
+	u16 buffer_desc_end;
+} __packed;
+
+struct prueth_col_tx_context_info {
+	u16 buffer_offset;
+	u16 buffer_offset2;
+	u16 buffer_offset_end;
+} __packed;
+
 /**
  * struct prueth_packet_info - Info about a packet in buffer
  * @shadow: this packet is stored in the collision queue
@@ -68,11 +80,13 @@ struct prueth_queue_info {
  * @error: this packet has an error
  */
 struct prueth_packet_info {
+	bool start_offset;
 	bool shadow;
 	unsigned int port;
 	unsigned int length;
 	bool broadcast;
 	bool error;
+	u32 bd; /* +++WMK: dbg only: original bd */
 };
 
 /**
@@ -131,38 +145,38 @@ struct prueth_packet_info {
  * memcpy. Don't change the order of the fields.
  */
 struct port_statistics {
-	u32 tx_bcast;
+	u32 tx_bcast;			/* 0x1F00 */
 	u32 tx_mcast;
 	u32 tx_ucast;
 
 	u32 tx_octets;
 
-	u32 rx_bcast;
+	u32 rx_bcast;			/* 0x1F10 */
 	u32 rx_mcast;
 	u32 rx_ucast;
 
 	u32 rx_octets;
 
-	u32 tx64byte;
+	u32 tx64byte;			/* 0x1F20 */
 	u32 tx65_127byte;
 	u32 tx128_255byte;
 	u32 tx256_511byte;
-	u32 tx512_1023byte;
+	u32 tx512_1023byte;		/* 0x1F30 */
 	u32 tx1024byte;
 
 	u32 rx64byte;
 	u32 rx65_127byte;
-	u32 rx128_255byte;
+	u32 rx128_255byte;		/* 0x1F40 */
 	u32 rx256_511byte;
 	u32 rx512_1023byte;
 	u32 rx1024byte;
 
-	u32 late_coll;
+	u32 late_coll;			/* 0x1F50 */
 	u32 single_coll;
 	u32 multi_coll;
 	u32 excess_coll;
 
-	u32 rx_misalignment_frames;
+	u32 rx_misalignment_frames;	/* 0x1F60 */
 	u32 stormprev_counter;
 	u32 mac_rxerror;
 	u32 sfd_error;
@@ -178,6 +192,68 @@ struct port_statistics {
 
 	u32 cs_error;
 	u32 sqe_test_error;
+} __packed;
+
+struct lre_statistics {
+	u32 cnt_tx_a;
+	u32 cnt_tx_b;
+	u32 cnt_tx_c;
+
+	u32 cnt_errwronglan_a;
+	u32 cnt_errwronglan_b;
+	u32 cnt_errwronglan_c;
+
+	u32 cnt_rx_a;
+	u32 cnt_rx_b;
+	u32 cnt_rx_c;
+
+	u32 cnt_errors_a;
+	u32 cnt_errors_b;
+	u32 cnt_errors_c;
+
+	u32 cnt_nodes;
+	u32 cnt_proxy_nodes;
+
+	u32 cnt_unique_rx_a;
+	u32 cnt_unique_rx_b;
+	u32 cnt_unique_rx_c;
+
+	u32 cnt_duplicate_rx_a;
+	u32 cnt_duplicate_rx_b;
+	u32 cnt_duplicate_rx_c;
+
+	u32 cnt_multiple_rx_a;
+	u32 cnt_multiple_rx_b;
+	u32 cnt_multiple_rx_c;
+
+	u32 cnt_own_rx_a;
+	u32 cnt_own_rx_b;
+
+	u32 duplicate_discard;
+	u32 transparent_reception;
+
+	u32 node_table_lookup_error_a;
+	u32 node_table_lookup_error_b;
+	u32 node_table_full;
+} __packed;
+
+struct prueth_hsr_prp_node {
+	u8 mac[6];
+	u8 state;
+	u8 status;
+
+	u32 cnt_rx_a;
+	u32 cnt_rx_b;
+
+	u32 prp_lid_err_a;
+	u32 prp_lid_err_b;
+
+	u8 cnt_rx_sup_a;
+	u8 cnt_rx_sup_b;
+	u16 time_last_seen_sup;
+
+	u16 time_last_seen_a;
+	u16 time_last_seen_b;
 } __packed;
 
 #endif /* __NET_TI_PRUETH_H */
