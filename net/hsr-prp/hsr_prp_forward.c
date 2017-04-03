@@ -514,6 +514,7 @@ static int hsr_prp_fill_frame_info(struct hsr_prp_frame_info *frame,
 	unsigned long irqflags;
 	u16 proto;
 
+	memset(frame, 0, sizeof(*frame));
 	frame->is_supervision = is_supervision_frame(priv, skb);
 	if (frame->is_supervision && priv->rx_offloaded &&
 	    (port->type != HSR_PRP_PT_MASTER)) {
