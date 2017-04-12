@@ -494,6 +494,7 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 	if (res < 0)
 		return res;
 
+	priv->prot_version = protocol_version;
 	if (priv->prot_version == PRP_V1) {
 		/* For PRP, lan_id has most significant 3 bits holding
 		 * the net_id of PRP_LAN_ID
@@ -515,8 +516,6 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 
 	ether_addr_copy(priv->sup_multicast_addr, def_multicast_addr);
 	priv->sup_multicast_addr[ETH_ALEN - 1] = multicast_spec;
-
-	priv->prot_version = protocol_version;
 
 	/* FIXME: should I modify the value of these?
 	 *
