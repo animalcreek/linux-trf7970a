@@ -227,24 +227,6 @@ static void hsr_set_lan_id(struct hsr_ethhdr *hsr_ethhdr,
 	set_hsr_tag_path(&hsr_ethhdr->hsr_tag, lane_id);
 }
 
-/* only hsr skb should be passed in */
-static void hsr_check_path_id(struct sk_buff *skb, struct hsr_prp_port *port)
-{
-	struct hsr_ethhdr *hsr_ethhdr;
-	int path_id;
-
-	hsr_ethhdr = (struct hsr_ethhdr *)skb_mac_header(skb);
-	path_id = get_hsr_tag_path(&hsr_ethhdr->hsr_tag);
-
-	if (port->type == HSR_PRP_PT_SLAVE_A) {
-		if (path_id & 1)
-			INC_CNT_RX_WRONG_LAN(port->type, port->priv);
-	} else {
-		if (!(path_id & 1))
-			INC_CNT_RX_WRONG_LAN(port->type, port->priv);
-	}
-}
-
 static void hsr_fill_tag(struct sk_buff *skb, struct hsr_prp_frame_info *frame,
 			 struct hsr_prp_port *port, u8 proto_version)
 {
@@ -619,11 +601,7 @@ void hsr_prp_forward_skb(struct sk_buff *skb, struct hsr_prp_port *port)
 	    (frame.skb_prp && port->priv->prot_version <= HSR_V1))
 		goto out_drop;
 
-	if (frame.skb_hsr) {
-		if (port->type == HSR_PRP_PT_SLAVE_A ||
-		    port->type == HSR_PRP_PT_SLAVE_B)
-			hsr_check_path_id(frame.skb_hsr, port);
-	}
+	/* Check for LAN_ID only for PRP */
 	if (frame.skb_prp) {
 		if (port->type == HSR_PRP_PT_SLAVE_A  ||
 		    port->type == HSR_PRP_PT_SLAVE_B)
