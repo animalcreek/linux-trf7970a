@@ -1,0 +1,91 @@
+/*
+ * Copyright (C) 2017 Animal Creek Technologies, Inc.
+ *
+ * Released under the GPLv2 only.
+ * SPDX-License-Identifier: GPL-2.0
+ */
+
+#include "am335x-boneblack.dts"
+
+/ {
+	model = "TI AM335x BeagleBone Black + RF Cape + trf7970atb NFC";
+	compatible = "ti,am335x-bone-black", "ti,am335x-bone", "ti,am33xx";
+};
+
+/*
+ * Pinmux conflict between MMC2 and trf7970a at offset:
+ * 0x14 (gpmc_ad5.mmc1_dat5/GPIO1_5 (SS Enable)) so disable MMC2.
+ */
+&mmc2 {
+	status = "disabled";
+};
+
+/*
+ * Pinmux conflicts between McASP0 and trf7970a at offsets:
+ * 0x190 (mcasp0_aclkx.mcasp0_aclkx/SPI1_SCLK),
+ * 0x194 (mcasp0_fsx.mcasp0_fsx/SPI1_MISO), and
+ * 0x19c (mcasp0_ahclkr.mcasp0_axr2/spi1_cs0) so disable McASP0.
+ */
+&mcasp0 {
+	status = "disabled";
+};
+
+&am33xx_pinmux {
+	/* GPIOs for EM2 Connector on RF Cape (nearest USB Type A connector) */
+	trf7970a_default: trf7970a_pins {
+		pinctrl-single,pins = <
+			/* gpio1_5 (SS Enable (EM2_SPI_ENA on RF Cape)) */
+			0x14 (PIN_OUTPUT_PULLUP   | MUX_MODE7)
+			/* gpio2_3 (EN) */
+			0x94 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)
+			/* gpio2_4 (EN2) */
+			0x98 (PIN_OUTPUT_PULLDOWN | MUX_MODE7)
+			/* gpio0_31 (IRQ) */
+			0x74 (PIN_INPUT           | MUX_MODE7)
+
+			/* SPI lines are made common on the RF Cape */
+			/* spi1_sclk */
+			0x190 (PIN_INPUT_PULLDOWN | MUX_MODE3)
+			/* spi1_miso */
+			0x194 (PIN_INPUT_PULLUP   | MUX_MODE3)
+			/* spi1_mosi */
+			0x198 (PIN_INPUT_PULLDOWN | MUX_MODE3)
+			/* spi1_cs0 */
+			0x19c (PIN_INPUT_PULLUP   | MUX_MODE3)
+		>;
+	};
+};
+
+/ {
+	trf7970atb_reg: tps61222dckt {
+		compatible = "regulator-fixed";
+		vin-supply = <&ldo3_reg>;
+		regulator-name = "vin_5v0";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+	};
+};
+
+&spi1 {
+	status = "okay";
+
+	trf7970a@0 {
+		compatible = "ti,trf7970a";
+		reg = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&trf7970a_default>;
+		spi-max-frequency = <2000000>;
+
+		interrupt-parent = <&gpio0>;
+		interrupts = <31 0>;
+		ti,enable-gpios = <&gpio2 3 GPIO_ACTIVE_HIGH>,
+				  <&gpio2 4 GPIO_ACTIVE_HIGH>;
+
+		vin-supply = <&trf7970atb_reg>;
+		autosuspend-delay = <30000>;
+		irq-status-read-quirk;
+		en2-rf-quirk;
+		t5t-rmb-extra-byte-quirk;
+		status = "okay";
+	};
+};
