@@ -200,7 +200,7 @@ static void prp_fill_rct(struct sk_buff *skb,
 		return;
 
 	if (frame->is_vlan)
-		skb_put_padto(skb, ETH_ZLEN + 4);
+		skb_put_padto(skb, VLAN_ETH_ZLEN);
 	else
 		skb_put_padto(skb, ETH_ZLEN);
 
