@@ -140,13 +140,15 @@ static int hsr_prp_dev_change_mtu(struct net_device *dev, int new_mtu)
 {
 	struct hsr_prp_priv *priv;
 	struct hsr_prp_port *master;
+	int max;
 
 	priv = netdev_priv(dev);
 	master = hsr_prp_get_port(priv, HSR_PRP_PT_MASTER);
-
-	if (new_mtu > hsr_prp_get_max_mtu(priv)) {
-		netdev_info(master->dev, "A HSR master's MTU cannot be greater than the smallest MTU of its slaves minus the HSR Tag length (%d octets).\n",
-			    HSR_PRP_HLEN);
+	max = hsr_prp_get_max_mtu(priv);
+	if (new_mtu > max) {
+		netdev_info(master->dev,
+			    "HSR/PRP: Invalid MTU, expected (<= %d), Got %d.\n",
+			    max, new_mtu);
 		return -EINVAL;
 	}
 
@@ -179,7 +181,8 @@ static int hsr_prp_dev_open(struct net_device *dev)
 			designation = '?';
 		}
 		if (!is_slave_up(port->dev))
-			netdev_warn(dev, "Slave %c (%s) is not up; please bring it up to get a fully working HSR network\n",
+			netdev_warn(dev,
+				    "HSR/PRP: Please bringup Slave %c (%s)\n",
 				    designation, port->dev->name);
 	}
 	rcu_read_unlock();
