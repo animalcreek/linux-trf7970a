@@ -227,7 +227,7 @@ struct prueth_emac {
 	struct port_statistics stats; /* stats holder when i/f is down */
 	u32 tx_collisions;
 	u32 tx_collision_drops;
-	u32 rx_shadow;
+	u32 rx_overflows;
 
 	spinlock_t lock;	/* serialize access */
 };
@@ -312,6 +312,7 @@ struct prueth {
 	unsigned int hsr_mode;
 	unsigned int emac_configured;
 	unsigned int tbl_check_period;
+	unsigned int node_table_clear;
 	unsigned int tbl_check_mask;
 	struct timer_list tbl_check_timer;
 	struct prueth_mmap_port_cfg_basis mmap_port_cfg_basis[PRUETH_PORT_MAX];
@@ -321,6 +322,12 @@ struct prueth {
 #ifdef	CONFIG_DEBUG_FS
 	struct dentry *root_dir;
 	struct dentry *node_tbl_file;
+	struct dentry *nt_clear_file;
+	struct dentry *hsr_mode_file;
+	struct dentry *dlrmt_file;
+	struct dentry *dd_file;
+	struct dentry *tr_file;
+	struct dentry *error_stats_file;
 #endif
 };
 
@@ -503,6 +510,354 @@ static const struct file_operations prueth_hsr_prp_node_table_fops = {
 	.release = single_release,
 };
 
+/* prueth_hsr_prp_nt_clear_write - write the user provided value to
+ * node_table_clear debugfs file
+ */
+static ssize_t
+prueth_hsr_prp_nt_clear_write(struct file *file, const char __user *user_buf,
+			      size_t count, loff_t *ppos)
+{
+	struct prueth *prueth =
+		((struct seq_file *)(file->private_data))->private;
+	unsigned long clear;
+	int err;
+
+	err = kstrtoul_from_user(user_buf, count, 0, &clear);
+	if (err)
+		return err;
+
+	if (clear)
+		prueth->node_table_clear = 1;
+	else
+		prueth->node_table_clear = 0;
+
+	return count;
+}
+
+/* prueth_hsr_prp_nt_clear_show - print the value of node_table_clear
+ * debugfs file
+ */
+static int
+prueth_hsr_prp_nt_clear_show(struct seq_file *sfp, void *data)
+{
+	struct prueth *prueth = (struct prueth *)sfp->private;
+	void __iomem *dram1 = prueth->mem[PRUETH_MEM_DRAM1].va;
+	u32 check = readl(dram1 + HOST_TIMER_CHECK_FLAGS);
+
+	seq_printf(sfp, "%lu\n",
+		   check & HOST_TIMER_NODE_TABLE_CLEAR_BIT);
+
+	return 0;
+}
+
+/* prueth_hsr_prp_nt_clear_open - Open the node_table clear debugfs file
+ *
+ * Description:
+ * This routine opens a debugfs file node_table of specific hsr
+ * or prp device
+ */
+static int
+prueth_hsr_prp_nt_clear_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, prueth_hsr_prp_nt_clear_show,
+			   inode->i_private);
+}
+
+static const struct file_operations prueth_hsr_prp_nt_clear_fops = {
+	.owner	= THIS_MODULE,
+	.open	= prueth_hsr_prp_nt_clear_open,
+	.read	= seq_read,
+	.write	= prueth_hsr_prp_nt_clear_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+/* prueth_hsr_mode_show - print the value of hsr_mode debugfs file
+ * for hsr device
+ */
+static int
+prueth_hsr_mode_show(struct seq_file *sfp, void *data)
+{
+	struct prueth *prueth = (struct prueth *)sfp->private;
+	void __iomem *dram0 = prueth->mem[PRUETH_MEM_DRAM0].va;
+	u32 mode = readl(dram0 + LRE_HSR_MODE);
+
+	seq_printf(sfp, "%u\n", mode);
+
+	return 0;
+}
+
+/* prueth_hsr_mode_write - write the user provided value to
+ * hsr_mode debugfs file
+ */
+static ssize_t
+prueth_hsr_mode_write(struct file *file, const char __user *user_buf,
+		      size_t count, loff_t *ppos)
+{
+	struct prueth *prueth =
+			((struct seq_file *)(file->private_data))->private;
+	void __iomem *dram0 = prueth->mem[PRUETH_MEM_DRAM0].va;
+	unsigned long mode;
+	int err;
+
+	err = kstrtoul_from_user(user_buf, count, 0, &mode);
+	if (err)
+		return err;
+
+	if ((mode < MODEH) || (mode > MODEM))
+		return -EINVAL;
+
+	prueth->hsr_mode = mode;
+	writel(mode, dram0 + LRE_HSR_MODE);
+
+	return count;
+}
+
+/* prueth_hsr_mode_open - Open the prueth_hsr_mode_open debugfs file
+ *
+ * Description:
+ * This routine opens a debugfs file hsr_mode for hsr device
+ */
+static int
+prueth_hsr_mode_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, prueth_hsr_mode_show,
+			   inode->i_private);
+}
+
+static const struct file_operations prueth_hsr_mode_fops = {
+	.owner	= THIS_MODULE,
+	.open	= prueth_hsr_mode_open,
+	.read	= seq_read,
+	.write	= prueth_hsr_mode_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+/* prueth_hsr_prp_dlrmt_write - write the user provided value to
+ * dup_list_reside_max_time debugfs file
+ */
+static ssize_t
+prueth_hsr_prp_dlrmt_write(struct file *file, const char __user *user_buf,
+			   size_t count, loff_t *ppos)
+{
+	struct prueth *prueth =
+			((struct seq_file *)(file->private_data))->private;
+	void __iomem *dram1 = prueth->mem[PRUETH_MEM_DRAM1].va;
+	unsigned int forget_time;
+	int err;
+
+	err = kstrtouint_from_user(user_buf, count, 0, &forget_time);
+	if (err)
+		return err;
+
+	/* input time is in msec. Firmware expects in unit of 10 msec */
+	forget_time /= 10;
+	writel(forget_time, dram1 + DUPLI_FORGET_TIME);
+
+	return count;
+}
+
+/* prueth_hsr_prp_nt_clear_show - Formats and prints node_table entries
+ */
+static int
+prueth_hsr_prp_dlrmt_show(struct seq_file *sfp, void *data)
+{
+	struct prueth *prueth = (struct prueth *)sfp->private;
+	void __iomem *dram1 = prueth->mem[PRUETH_MEM_DRAM1].va;
+	u32 forget_time = readl(dram1 + DUPLI_FORGET_TIME);
+
+	/* input time is in msec. Firmware expects in unit of 10 msec */
+	forget_time *= 10;
+	seq_printf(sfp, "%u\n", forget_time);
+
+	return 0;
+}
+
+/* prueth_hsr_prp_nt_clear_open - Open the node_table clear file
+ *
+ * Description:
+ * This routine opens a debugfs file node_table of specific hsr
+ * or prp device
+ */
+static int
+prueth_hsr_prp_dlrmt_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, prueth_hsr_prp_dlrmt_show,
+			   inode->i_private);
+}
+
+static const struct file_operations prueth_hsr_prp_dlrmt_fops = {
+	.owner	= THIS_MODULE,
+	.open	= prueth_hsr_prp_dlrmt_open,
+	.read	= seq_read,
+	.write	= prueth_hsr_prp_dlrmt_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+/* prueth_hsr_prp_dd_write - write the user provided value to
+ * duplicate_discard debugfs file
+ */
+static ssize_t
+prueth_hsr_prp_dd_write(struct file *file, const char __user *user_buf,
+			size_t count, loff_t *ppos)
+{
+	struct prueth *prueth =
+			((struct seq_file *)(file->private_data))->private;
+	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
+	unsigned long dd;
+	int err;
+
+	err = kstrtoul_from_user(user_buf, count, 0, &dd);
+	if (err)
+		return err;
+
+	if ((dd != IEC62439_CONST_DUPLICATE_DISCARD) &&
+	    (dd != IEC62439_CONST_DUPLICATE_ACCEPT))
+		return -EINVAL;
+
+	writel(dd, sram + LRE_DUPLICATE_DISCARD);
+
+	return count;
+}
+
+/* prueth_hsr_prp_dd_show - prints duplicate_discard debugfs file value
+ */
+static int
+prueth_hsr_prp_dd_show(struct seq_file *sfp, void *data)
+{
+	struct prueth *prueth = (struct prueth *)sfp->private;
+	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
+	u32 dd = readl(sram + LRE_DUPLICATE_DISCARD);
+
+	seq_printf(sfp, "%u\n", dd);
+
+	return 0;
+}
+
+/* prueth_hsr_prp_dd_open - Open the duplicate_discard debugfs file
+ *
+ * Description:
+ * This routine opens a debugfs file duplicate_discard for hsr or
+ * prp device
+ */
+static int
+prueth_hsr_prp_dd_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, prueth_hsr_prp_dd_show,
+			   inode->i_private);
+}
+
+static const struct file_operations prueth_hsr_prp_dd_fops = {
+	.owner	= THIS_MODULE,
+	.open	= prueth_hsr_prp_dd_open,
+	.read	= seq_read,
+	.write	= prueth_hsr_prp_dd_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+/* prueth_prp_tr_write - write the user provided value to
+ * transparent_reception debugfs file
+ */
+static ssize_t
+prueth_prp_tr_write(struct file *file, const char __user *user_buf,
+		    size_t count, loff_t *ppos)
+{
+	struct prueth *prueth =
+			((struct seq_file *)(file->private_data))->private;
+	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
+	unsigned long tr;
+	int err;
+
+	err = kstrtoul_from_user(user_buf, count, 0, &tr);
+	if (err)
+		return err;
+
+	if ((tr != IEC62439_CONST_TRANSPARENT_RECEPTION_REMOVE_RCT) &&
+	    (tr != IEC62439_CONST_TRANSPARENT_RECEPTION_PASS_RCT))
+		return -EINVAL;
+
+	writel(tr, sram + LRE_TRANSPARENT_RECEPTION);
+
+	return count;
+}
+
+/* prueth_prp_tr_show - print the current transparent_reception
+ * file value for prp device.
+ */
+static int
+prueth_prp_tr_show(struct seq_file *sfp, void *data)
+{
+	struct prueth *prueth = (struct prueth *)sfp->private;
+	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
+	u32 tr = readl(sram + LRE_TRANSPARENT_RECEPTION);
+
+	seq_printf(sfp, "%u\n", tr);
+
+	return 0;
+}
+
+/* prueth_prp_tr_open:- Open the transparent reception file
+ *
+ * Description:
+ * This routine opens a debugfs file. transparent_reception
+ * for prp device
+ */
+static int
+prueth_prp_tr_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, prueth_prp_tr_show,
+			   inode->i_private);
+}
+
+static const struct file_operations prueth_prp_tr_fops = {
+	.owner	= THIS_MODULE,
+	.open	= prueth_prp_tr_open,
+	.read	= seq_read,
+	.write	= prueth_prp_tr_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+/* prueth_error_stats_show - print the error stats
+ */
+static int
+prueth_error_stats_show(struct seq_file *sfp, void *data)
+{
+	struct prueth *prueth = (struct prueth *)sfp->private;
+
+	seq_printf(sfp, "tx_collisions: %u\n",
+		   prueth->emac[PRUETH_PORT_MII0]->tx_collisions);
+	seq_printf(sfp, "tx_collision_drops: %u\n",
+		   prueth->emac[PRUETH_PORT_MII0]->tx_collision_drops);
+	seq_printf(sfp, "rx_overflows: %u\n",
+		   prueth->emac[PRUETH_PORT_MII0]->rx_overflows);
+
+	return 0;
+}
+
+/* prueth_prp_erro_stats_open:- Open the error stats file
+ *
+ * Description:
+ * This routine opens a debugfs file error_stats
+ */
+static int
+prueth_error_stats_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, prueth_error_stats_show,
+			   inode->i_private);
+}
+
+static const struct file_operations prueth_error_stats_fops = {
+	.owner	= THIS_MODULE,
+	.open	= prueth_error_stats_open,
+	.read	= seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
 /* prueth_hsr_prp_debugfs_init - create hsr-prp node_table file for dumping
  * the node table
  *
@@ -536,10 +891,68 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 				 prueth->root_dir, prueth,
 				 &prueth_hsr_prp_node_table_fops);
 	if (!de) {
-		dev_err(dev, "Cannot create hsr-prp node_table directory\n");
+		dev_err(dev, "Cannot create hsr-prp node_table file\n");
 		return rc;
 	}
 	prueth->node_tbl_file = de;
+
+	de = debugfs_create_file("node_table_clear", 0644,
+				 prueth->root_dir, prueth,
+				 &prueth_hsr_prp_nt_clear_fops);
+	if (!de) {
+		dev_err(dev, "Cannot create hsr-prp node table clear file\n");
+		return rc;
+	}
+	prueth->nt_clear_file = de;
+
+	if (PRUETH_IS_HSR(prueth)) {
+		de = debugfs_create_file("hsr_mode", 0644,
+					 prueth->root_dir, prueth,
+					 &prueth_hsr_mode_fops);
+		if (!de) {
+			dev_err(dev, "Cannot create hsr mode file\n");
+			return rc;
+		}
+		prueth->hsr_mode_file = de;
+	}
+
+	de = debugfs_create_file("dup_list_reside_max_time", 0644,
+				 prueth->root_dir, prueth,
+				 &prueth_hsr_prp_dlrmt_fops);
+	if (!de) {
+		dev_err(dev, "Cannot create dup_list_reside_max_time file\n");
+		return rc;
+	}
+	prueth->dlrmt_file = de;
+
+	de = debugfs_create_file("duplicate_discard", 0644,
+				 prueth->root_dir, prueth,
+				 &prueth_hsr_prp_dd_fops);
+	if (!de) {
+		dev_err(dev, "Cannot create duplicate_discard file\n");
+		return rc;
+	}
+	prueth->dd_file = de;
+
+	if (PRUETH_IS_PRP(prueth)) {
+		de = debugfs_create_file("transparent_reception", 0644,
+					 prueth->root_dir, prueth,
+					 &prueth_prp_tr_fops);
+
+		if (!de) {
+			dev_err(dev, "Cannot create duplicate_discard file\n");
+			return rc;
+		}
+		prueth->tr_file = de;
+	}
+	de = debugfs_create_file("error_stats", 0644,
+				 prueth->root_dir, prueth,
+				 &prueth_error_stats_fops);
+	if (!de) {
+		dev_err(dev, "Cannot create error_stats file\n");
+		return rc;
+	}
+	prueth->error_stats_file = de;
 
 	return 0;
 }
@@ -555,6 +968,22 @@ prueth_hsr_prp_debugfs_term(struct prueth *prueth)
 {
 	debugfs_remove(prueth->node_tbl_file);
 	prueth->node_tbl_file = NULL;
+	debugfs_remove(prueth->nt_clear_file);
+	prueth->nt_clear_file = NULL;
+	if (PRUETH_IS_HSR(prueth)) {
+		debugfs_remove(prueth->hsr_mode_file);
+		prueth->hsr_mode_file = NULL;
+	}
+	debugfs_remove(prueth->dlrmt_file);
+	prueth->dlrmt_file = NULL;
+	debugfs_remove(prueth->dd_file);
+	prueth->dd_file = NULL;
+	if (PRUETH_IS_PRP(prueth)) {
+		debugfs_remove(prueth->tr_file);
+		prueth->tr_file = NULL;
+	}
+	debugfs_remove(prueth->error_stats_file);
+	prueth->error_stats_file = NULL;
 	debugfs_remove(prueth->root_dir);
 	prueth->root_dir = NULL;
 }
@@ -1161,6 +1590,13 @@ static void prueth_red_table_timer(unsigned long arg)
 	struct prueth *prueth = (struct prueth *)arg;
 	void __iomem *dram1 = prueth->mem[PRUETH_MEM_DRAM1].va;
 
+	if (prueth->node_table_clear) {
+		prueth->tbl_check_mask |= HOST_TIMER_NODE_TABLE_CLEAR_BIT;
+		prueth->node_table_clear = 0;
+	} else {
+		prueth->tbl_check_mask &= ~HOST_TIMER_NODE_TABLE_CLEAR_BIT;
+	}
+
 	writel(prueth->tbl_check_mask, dram1 + HOST_TIMER_CHECK_FLAGS);
 
 	prueth->tbl_check_timer.expires = jiffies + prueth->tbl_check_period;
@@ -1683,6 +2119,7 @@ static int emac_rx_packets(struct prueth_emac *emac, int quota)
 	const struct prueth_queue_info *rxqueue;
 	struct prueth *prueth;
 	u8 overflow_cnt;
+	u8 status;
 	u16 bd_rd_ptr, bd_wr_ptr, update_rd_ptr;
 	u32 rd_buf_desc;
 	void __iomem *shared_ram = emac->prueth->mem[PRUETH_MEM_SHARED_RAM].va;
@@ -1711,6 +2148,15 @@ static int emac_rx_packets(struct prueth_emac *emac, int quota)
 		i = prio_q_ids[j];
 		queue_desc = emac->rx_queue_descs + i;
 		rxqueue = &queue_infos[PRUETH_PORT_HOST][i];
+
+		status = readb(&queue_desc->status);
+		if (status & 0x04) {
+			emac->rx_overflows++;
+			if (PRUETH_HAS_SWITCH(prueth)) {
+				other_emac = prueth->emac[emac->port_id ^ 0x3];
+				other_emac->rx_overflows++;
+			}
+		}
 
 		overflow_cnt = readb(&queue_desc->overflow_cnt);
 		if (overflow_cnt > 0) {
@@ -2476,14 +2922,6 @@ static void emac_get_strings(struct net_device *ndev, u32 stringset, u8 *data)
 	}
 }
 
-void dump_extra_stats(struct prueth_emac *emac)
-{
-	netdev_err(emac->ndev, "xStats tx collisions %u  drops %u\n",
-		   emac->tx_collisions, emac->tx_collision_drops);
-	netdev_err(emac->ndev, "xStats rx_shadow %u\n",
-		   emac->rx_shadow);
-}
-
 static void emac_get_ethtool_stats(struct net_device *ndev,
 				   struct ethtool_stats *stats, u64 *data)
 {
@@ -2514,9 +2952,6 @@ static void emac_get_ethtool_stats(struct net_device *ndev,
 			data[lre_start + i] = val;
 		}
 	}
-
-	/*dump_nt_entries(emac->prueth);*/
-	dump_extra_stats(emac);
 }
 
 /* Ethtool support for EMAC adapter */
