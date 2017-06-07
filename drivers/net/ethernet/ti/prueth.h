@@ -43,6 +43,10 @@ struct prueth_queue_desc {
 	u8 overflow_cnt;
 } __packed;
 
+/* status flags */
+#define PRUETH_MASTER_QUEUE_BUSY		BIT(0)
+#define PRUETH_PACKET_IN_COLLISION_QUEUE	BIT(1)
+#define PRUETH_PACKET_DISCARD_OVFL		BIT(2)
 /**
  * struct prueth_queue - Information about a queue in memory
  * @buffer_offset: buffer offset in OCMC RAM
