@@ -1812,7 +1812,7 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 	int ret;
 	bool colq_selected = false;
 	void __iomem *sram = NULL;
-	u8 status, busy_m = 0x1;
+	u8 status;
 
 	switch (emac->port_id) {
 	case PRUETH_PORT_MII0:
@@ -1851,7 +1851,7 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 	if (emac->tx_colq_descs) {
 		/* Switch needs to handle tx collision */
 		status = readb(&queue_desc->status);
-		if (status & busy_m) {
+		if (status & PRUETH_MASTER_QUEUE_BUSY) {
 			/* Tx q busy, put pkt in col Q */
 			++emac->tx_collisions;
 			status = readb(dram + COLLISION_STATUS_ADDR + txport);
@@ -1872,7 +1872,7 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 			 * by checking busy_m bit
 			 */
 			status = readb(&queue_desc->status);
-			if (status & busy_m) {
+			if (status & PRUETH_MASTER_QUEUE_BUSY) {
 				/* Nope. Clear busy_s bit */
 				writeb(0x0, &queue_desc->busy_s);
 
@@ -2151,7 +2151,8 @@ static int emac_rx_packets(struct prueth_emac *emac, int quota)
 		rxqueue = &queue_infos[PRUETH_PORT_HOST][i];
 
 		status = readb(&queue_desc->status);
-		if (status & 0x04) {
+		/* check overflow status */
+		if (status & PRUETH_PACKET_DISCARD_OVFL) {
 			emac->rx_overflows++;
 			if (PRUETH_HAS_SWITCH(prueth)) {
 				other_emac = prueth->emac[emac->port_id ^ 0x3];
