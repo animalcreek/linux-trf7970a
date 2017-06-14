@@ -85,7 +85,6 @@
 		autosuspend-delay = <30000>;
 		irq-status-read-quirk;
 		en2-rf-quirk;
-		t5t-rmb-extra-byte-quirk;
 		status = "okay";
 	};
 };
