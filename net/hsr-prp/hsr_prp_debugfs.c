@@ -136,6 +136,67 @@ static const struct file_operations hsr_prp_stats_fops = {
 	.llseek = seq_lseek,
 	.release = single_release,
 };
+
+/* hsr_mode_show - print the value of hsr_mode debugfs file
+ * for hsr device
+ */
+static int
+hsr_mode_show(struct seq_file *sfp, void *data)
+{
+	struct hsr_prp_priv *priv = (struct hsr_prp_priv *)sfp->private;
+
+	seq_printf(sfp, "%u\n", priv->hsr_mode);
+
+	return 0;
+}
+
+/* hsr_mode_write - write the user provided value to
+ * hsr_mode debugfs file
+ */
+static ssize_t
+hsr_mode_write(struct file *file, const char __user *user_buf,
+	       size_t count, loff_t *ppos)
+{
+	struct hsr_prp_priv *priv =
+		((struct seq_file *)(file->private_data))->private;
+	unsigned long mode;
+	int err;
+
+	err = kstrtoul_from_user(user_buf, count, 0, &mode);
+	if (err)
+		return err;
+
+	/* Support mode change only if offloaded as more change
+	 * is needed to support non offloaded case
+	 */
+	if (!(priv->rx_offloaded && priv->l2_fwd_offloaded))
+		return -EPERM;
+
+	priv->hsr_mode = mode;
+
+	return count;
+}
+
+/* hsr_mode_open - Open the prueth_hsr_mode_open debugfs file
+ *
+ * Description:
+ * This routine opens a debugfs file hsr_mode for hsr device
+ */
+static int
+hsr_mode_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, hsr_mode_show, inode->i_private);
+}
+
+static const struct file_operations hsr_mode_fops = {
+	.owner	= THIS_MODULE,
+	.open	= hsr_mode_open,
+	.read	= seq_read,
+	.write	= hsr_mode_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
 /* hsr_prp_debugfs_init - create hsr-prp node_table file for dumping
  * the node table
  *
@@ -149,7 +210,14 @@ int hsr_prp_debugfs_init(struct hsr_prp_priv *priv,
 	int rc = -1;
 	struct dentry *de = NULL;
 
+#ifdef TODO
 	de = debugfs_create_dir(hsr_prp_dev->name, NULL);
+#else
+	if (priv->prot_version <= HSR_V1)
+		de = debugfs_create_dir("hsr", NULL);
+	else
+		de = debugfs_create_dir("prp", NULL);
+#endif
 	if (!de) {
 		netdev_err(hsr_prp_dev, "Cannot create hsr-prp debugfs root\n");
 		return rc;
@@ -172,10 +240,22 @@ int hsr_prp_debugfs_init(struct hsr_prp_priv *priv,
 				 &hsr_prp_stats_fops);
 	if (!de) {
 		netdev_err(hsr_prp_dev,
-			   "Cannot create hsr-prp stats directory\n");
+			   "Cannot create hsr-prp stats file\n");
 		return rc;
 	}
 	priv->stats_file = de;
+
+	if (priv->prot_version == HSR_V1) {
+		de = debugfs_create_file("hsr_mode", 0444,
+					 priv->root_dir, priv,
+					 &hsr_mode_fops);
+		if (!de) {
+			netdev_err(hsr_prp_dev,
+				   "Cannot create hsr-prp hsr_mode file\n");
+			return rc;
+		}
+		priv->hsr_mode_file = de;
+	}
 
 	return 0;
 } /* end of hst_prp_debugfs_init */
@@ -193,6 +273,9 @@ hsr_prp_debugfs_term(struct hsr_prp_priv *priv)
 	priv->node_tbl_file = NULL;
 	debugfs_remove(priv->stats_file);
 	priv->stats_file = NULL;
+	if (priv->prot_version == HSR_V1)
+		debugfs_remove(priv->hsr_mode_file);
+	priv->hsr_mode_file = NULL;
 	debugfs_remove(priv->root_dir);
 	priv->root_dir = NULL;
 }

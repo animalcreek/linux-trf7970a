@@ -274,6 +274,9 @@ static struct sk_buff *create_tagged_skb(struct sk_buff *skb_o,
 
 		prp_fill_rct(skb, frame, port);
 		return skb;
+	} else if ((port->priv->prot_version == HSR_V1) &&
+		   (port->priv->hsr_mode == IEC62439_3_HSR_MODE_T)) {
+		return skb_clone(skb_o, GFP_ATOMIC);
 	}
 
 	/* Create the new skb with enough headroom to fit the HSR tag */
@@ -577,13 +580,20 @@ static int hsr_prp_fill_frame_info(struct hsr_prp_frame_info *frame,
 			if (port->type != HSR_PRP_PT_MASTER) {
 				frame->is_from_san = true;
 			} else {
-				/* Sequence nr for the master node */
-				spin_lock_irqsave(&port->priv->seqnr_lock,
-						  irqflags);
-				frame->sequence_nr = port->priv->sequence_nr;
-				port->priv->sequence_nr++;
-				spin_unlock_irqrestore(&port->priv->seqnr_lock,
-						       irqflags);
+				if (((priv->prot_version == HSR_V1) &&
+				     (priv->hsr_mode
+					!= IEC62439_3_HSR_MODE_T)) ||
+				     (priv->prot_version == PRP_V1) ||
+				     (priv->prot_version == HSR_V0))	{
+					/* Sequence nr for the master node */
+					spin_lock_irqsave(&priv->seqnr_lock,
+							  irqflags);
+					frame->sequence_nr = priv->sequence_nr;
+					priv->sequence_nr++;
+					spin_unlock_irqrestore(&priv->
+							       seqnr_lock,
+							       irqflags);
+				}
 			}
 		}
 	}
