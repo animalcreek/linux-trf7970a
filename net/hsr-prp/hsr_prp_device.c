@@ -503,6 +503,8 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 		 * the net_id of PRP_LAN_ID
 		 */
 		priv->net_id = PRP_LAN_ID << 1;
+	} else {
+		priv->hsr_mode = IEC62439_3_HSR_MODE_H;
 	}
 
 	spin_lock_init(&priv->seqnr_lock);

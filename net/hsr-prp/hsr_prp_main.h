@@ -210,6 +210,13 @@ struct hsr_prp_port {
 
 #define HSR	0
 #define PRP	1
+
+#define IEC62439_3_HSR_MODE_H	1
+#define IEC62439_3_HSR_MODE_N	2
+#define IEC62439_3_HSR_MODE_T	3
+#define IEC62439_3_HSR_MODE_U	4
+#define IEC62439_3_HSR_MODE_M	5
+
 struct hsr_prp_priv {
 	struct rcu_head		rcu_head;
 	struct list_head	ports;
@@ -233,12 +240,14 @@ struct hsr_prp_priv {
 	u8 net_id;		/* for PRP, it occupies most significant 3 bits
 				 * of lan_id
 				 */
+	u8 hsr_mode;		/* value of hsr mode */
 	spinlock_t seqnr_lock;	/* locking for sequence_nr */
 	unsigned char		sup_multicast_addr[ETH_ALEN];
 #ifdef	CONFIG_DEBUG_FS
 	struct dentry *root_dir;
 	struct dentry *node_tbl_file;
 	struct dentry *stats_file;
+	struct dentry *hsr_mode_file;
 #endif
 };
 
