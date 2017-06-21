@@ -6,6 +6,6 @@
  * published by the Free Software Foundation.
  */
 
-#include "am57xx-evm.dts"
+#include "am57xx-evm-base.dts"
 #include "am57xx-evm-common-cam-ov10635.dtsi"
 
