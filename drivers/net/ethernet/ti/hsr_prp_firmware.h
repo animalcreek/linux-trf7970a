@@ -152,6 +152,8 @@
 
 /* SHARED RAM */
 
+/* 8 bytes of VLAN PCP to RX QUEUE MAPPING */
+#define QUEUE_2_PCP_MAP_OFFSET                 0x120
 /* Value is always 0 and is used as lreInterfaceStatsIndex.
  * Starts after PTP.
  */

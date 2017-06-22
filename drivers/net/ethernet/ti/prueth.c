@@ -120,7 +120,8 @@ enum pruss_ethtype {
 #define PRUETH_HAS_SWITCH(p) \
 	(PRUETH_IS_SWITCH(p) || PRUETH_HAS_HSR(p) || PRUETH_HAS_PRP(p))
 
-#define PRUETH_RED_TABLE_CHECK_PERIOD		(HZ / 100)
+#define PRUETH_RED_TABLE_CHECK_PERIOD	(HZ / 100)
+#define NUM_VLAN_PCP			8
 
 /* In switch mode there are 3 real ports i.e. 3 mac addrs.
  * however Linux sees only the host side port. The other 2 ports
@@ -315,6 +316,7 @@ struct prueth {
 	unsigned int node_table_clear;
 	unsigned int tbl_check_mask;
 	struct timer_list tbl_check_timer;
+	u8 pcp_rxq_map[NUM_VLAN_PCP];
 	struct prueth_mmap_port_cfg_basis mmap_port_cfg_basis[PRUETH_PORT_MAX];
 	struct prueth_mmap_sram_cfg mmap_sram_cfg;
 	struct prueth_mmap_ocmc_cfg mmap_ocmc_cfg;
@@ -1004,10 +1006,11 @@ static struct prueth_col_rx_context_info col_rx_context_infos[PRUETH_PORT_MAX];
 static struct prueth_queue_desc queue_descs[PRUETH_PORT_MAX][NUM_QUEUES + 1];
 
 /* VLAN-tag PCP to priority queue map for HSR/PRP/SWITCH.
- * Index is PCP val. This mapping supports only two levels
- * of priority
- *   low  - pcp 0..3 maps to Q4
- *   high - pcp 4..7 maps to Q1.
+ * Index is PCP val.
+ *   low  - pcp 0..1 maps to Q4
+ *              2..3 maps to Q3
+ *              4..5 maps to Q2
+ *   high - pcp 6..7 maps to Q1.
  */
 static const unsigned short sw_pcp_tx_priority_queue_map[] = {
 	PRUETH_QUEUE4, PRUETH_QUEUE4,
@@ -1017,12 +1020,14 @@ static const unsigned short sw_pcp_tx_priority_queue_map[] = {
 };
 
 /* Order of processing of port Rx queues */
-static const unsigned int sw_port_rx_priority_queue_ids[] = {
+static unsigned int sw_port_rx_priority_queue_ids[] = {
 	PRUETH_QUEUE1,
 	PRUETH_QUEUE2,
 	PRUETH_QUEUE3,
 	PRUETH_QUEUE4
 };
+
+static int sw_num_rx_queues = NUM_QUEUES;
 
 /* Order of processing of port Rx queues */
 static const unsigned int emac_port_rx_priority_queue_ids[][2] = {
@@ -1038,6 +1043,8 @@ static const unsigned int emac_port_rx_priority_queue_ids[][2] = {
 		PRUETH_QUEUE4
 	},
 };
+
+static const int emac_num_rx_queues = (NUM_QUEUES / 2);
 
 static int prueth_sw_hostconfig(struct prueth *prueth)
 {
@@ -1476,6 +1483,23 @@ static int prueth_emac_config(struct prueth *prueth, struct prueth_emac *emac)
 	return 0;
 }
 
+static int prueth_hsr_prp_pcp_rxq_map_config(struct prueth *prueth)
+{
+	void __iomem *sram  = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
+	int i, j, pcp = (NUM_VLAN_PCP / 2);
+	u32 val;
+
+	for (i = 0; i < 2; i++) {
+		val = 0;
+		for (j = 0; j < pcp; j++)
+			val |= (prueth->pcp_rxq_map[i * pcp + j] << (j * 8));
+
+		writel(val, sram + QUEUE_2_PCP_MAP_OFFSET + i * 4);
+	}
+
+	return 0;
+}
+
 static int prueth_hsr_prp_host_table_init(struct prueth *prueth)
 {
 	void __iomem *dram0 = prueth->mem[PRUETH_MEM_DRAM0].va;
@@ -1639,6 +1663,7 @@ static int prueth_hsr_prp_config(struct prueth *prueth)
 	if (prueth->emac_configured)
 		return 0;
 
+	prueth_hsr_prp_pcp_rxq_map_config(prueth);
 	prueth_hsr_prp_host_table_init(prueth);
 	prueth_hsr_prp_node_table_init(prueth);
 	prueth_hsr_prp_port_table_init(prueth);
@@ -2137,10 +2162,10 @@ static int emac_rx_packets(struct prueth_emac *emac, int quota)
 
 	if (PRUETH_HAS_SWITCH(prueth)) {
 		prio_q_ids = &sw_port_rx_priority_queue_ids[0];
-		q_cnt = 4;
+		q_cnt = sw_num_rx_queues;
 	} else {
 		prio_q_ids = emac_port_rx_priority_queue_ids[emac->port_id];
-		q_cnt = 2;
+		q_cnt = emac_num_rx_queues;
 	}
 
 	/* search host queues for packets */
@@ -3713,6 +3738,69 @@ static int prueth_of_get_queue_sizes(struct prueth *prueth,
 	return 0;
 }
 
+static void prueth_of_get_pcp_rxq_map(struct prueth *prueth,
+				      struct device_node *np)
+{
+	struct prueth_mmap_port_cfg_basis *pb;
+	int q, j, next_pcp, ret;
+	u8 rxq_mask = 0;
+
+	ret = of_property_read_u8_array(np, "pcp-rxq-map",
+					prueth->pcp_rxq_map, NUM_VLAN_PCP);
+	if (ret) {
+		/* Construct the default map. If all q sizes are non-zero,
+		 * the default pcp-rxq map will be, with pcp0 lo-to-hi
+		 * (left-to-right), <q4 q4 q3 q3 q2 q2 q1 q1>. If only
+		 * q2 is 0 for example, then the default map would be
+		 * <q4 q4 q4 q4 q3 q3 q1 q1>
+		 */
+		pb = &prueth->mmap_port_cfg_basis[PRUETH_PORT_HOST];
+		/* Start from the highest priority pcp 7 */
+		next_pcp = NUM_VLAN_PCP - 1;
+		for (q = PRUETH_QUEUE1; q <= PRUETH_QUEUE4; q++) {
+			/* Don't map any pcp to q if its size is not
+			 * even enough for min frame size, ie the
+			 * q cannot receive any frame.
+			 */
+			if (pb->queue_size[q] < 2)
+				continue;
+
+			/* Map next_pcp and all lower pcp's to q */
+			for (j = next_pcp; j >= 0; j--)
+				prueth->pcp_rxq_map[j] = q;
+
+			/* Prepare next pcp to map, ie. 2 lower than current
+			 * Thus if there is an eligible queue to map to, all
+			 * pcp's that are at least 2 lower than current one
+			 * will be mapped to that queue.
+			 */
+			next_pcp -= 2;
+		}
+	}
+
+	for (j = 0; j < NUM_VLAN_PCP; j++) {
+		if (prueth->pcp_rxq_map[j] > PRUETH_QUEUE4)
+			prueth->pcp_rxq_map[j] = PRUETH_QUEUE4;
+
+		rxq_mask |= BIT(prueth->pcp_rxq_map[j]);
+	}
+
+	/* make sure the default lowest priority queue
+	 * is included
+	 */
+	rxq_mask |= BIT(PRUETH_QUEUE4);
+
+	/* Update the rx queue ids array */
+	j = 0;
+	for (q = PRUETH_QUEUE1; q <= PRUETH_QUEUE4; q++) {
+		if (rxq_mask & BIT(q)) {
+			sw_port_rx_priority_queue_ids[j] = q;
+			j++;
+		}
+	}
+	sw_num_rx_queues = j;
+}
+
 static int prueth_init_mmap_configs(struct prueth *prueth)
 {
 	if (PRUETH_HAS_SWITCH(prueth)) {
@@ -3844,6 +3932,9 @@ static int prueth_probe(struct platform_device *pdev)
 	if (eth_node)
 		prueth_of_get_queue_sizes(prueth, eth_node, PRUETH_PORT_MII1);
 
+	if (PRUETH_HAS_RED(prueth))
+		prueth_of_get_pcp_rxq_map(prueth, np);
+
 	prueth_init_mmap_configs(prueth);
 
 	if (PRUETH_HAS_SWITCH(prueth))
@@ -3953,6 +4044,13 @@ static int prueth_probe(struct platform_device *pdev)
 		 prueth->mmap_port_cfg_basis[PRUETH_PORT_HOST].queue_size[2],
 		 prueth->mmap_port_cfg_basis[PRUETH_PORT_HOST].queue_size[3],
 		 prueth->mmap_port_cfg_basis[PRUETH_PORT_HOST].col_queue_size);
+
+	if (PRUETH_HAS_RED(prueth))
+		dev_info(dev, "pcp-rxq-map (lo2hi->): %u %u %u %u %u %u %u %u\n",
+			 prueth->pcp_rxq_map[0], prueth->pcp_rxq_map[1],
+			 prueth->pcp_rxq_map[2], prueth->pcp_rxq_map[3],
+			 prueth->pcp_rxq_map[4], prueth->pcp_rxq_map[5],
+			 prueth->pcp_rxq_map[6], prueth->pcp_rxq_map[7]);
 
 	return 0;
 
