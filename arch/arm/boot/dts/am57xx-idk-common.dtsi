@@ -165,6 +165,8 @@
 		interrupt-parent = <&pruss2_intc>;
 		/*rx-queue-size = /bits/ 16 <254 134 134 254 48>;*/ /* RED */
 		/*rx-queue-size = /bits/ 16 <194 194 194 194 48>;*/ /* EMAC */
+		/* map is lowpcp-to->hipcp where val 3=q4, 2=q3, 1=q2, 0=q1 */
+		/*pcp-rxq-map = /bits/ 8 <3 3 2 2 1 1 0 0>;*/
 
 		pruss2_emac0: ethernet-mii0 {
 			phy-handle = <&pruss2_eth0_phy>;
