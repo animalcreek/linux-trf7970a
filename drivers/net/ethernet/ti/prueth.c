@@ -2551,6 +2551,8 @@ static int sw_emac_pru_stop(struct prueth_emac *emac, struct net_device *ndev)
 	struct prueth *prueth = emac->prueth;
 
 	prueth->emac_configured &= ~BIT(emac->port_id);
+	free_irq(emac->tx_irq, emac->ndev);
+	free_irq(emac->rx_irq, emac->ndev);
 
 	/* another emac is still in use, don't stop the PRUs */
 	if (prueth->emac_configured)
@@ -2561,8 +2563,6 @@ static int sw_emac_pru_stop(struct prueth_emac *emac, struct net_device *ndev)
 	/* disable and free rx and tx interrupts */
 	disable_irq(emac->tx_irq);
 	disable_irq(emac->rx_irq);
-	free_irq(emac->tx_irq, ndev);
-	free_irq(emac->rx_irq, ndev);
 	emac_lre_get_stats(emac, &emac->prueth->lre_stats);
 
 	if (PRUETH_HAS_RED(emac->prueth)) {
