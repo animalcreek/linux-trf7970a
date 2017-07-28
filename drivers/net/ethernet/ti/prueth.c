@@ -3977,9 +3977,9 @@ static int prueth_probe(struct platform_device *pdev)
 	prueth_init_mmap_configs(prueth);
 
 	if (PRUETH_HAS_SWITCH(prueth))
-		prueth->ocmc_ram_size = OCMC_RAM_SIZE;
-	else
 		prueth->ocmc_ram_size = OCMC_RAM_SIZE_SWITCH;
+	else
+		prueth->ocmc_ram_size = OCMC_RAM_SIZE;
 
 	/* OCMC_RAM1 */
 	prueth->sram_pool = of_gen_pool_get(np, "sram", 0);
