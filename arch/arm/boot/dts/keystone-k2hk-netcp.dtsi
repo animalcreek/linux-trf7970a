@@ -233,7 +233,8 @@ netcp: netcp@2000000 {
 				<&dma_gbe 3>,	/* PA cluster 3 channel */
 				<&dma_gbe 4>,	/* PA cluster 4 channel */
 				<&dma_gbe 5>,	/* PA cluster 5 channel */
-				<&dma_gbe 31>;	/* PA rx flow for cmd rsp */
+				<&dma_gbe 31>,	/* PA rx flow for cmd rsp */
+				<&dma_gbe 6>;	/* SA tx channel */
 	ti,navigator-dma-names = "netrx0",
 				 "netrx1",
 				 "nettx",
@@ -245,7 +246,8 @@ netcp: netcp@2000000 {
 				 "pa-cl3",
 				 "pa-cl4",
 				 "pa-cl5",
-				 "pa-cmd-rsp";
+				 "pa-cmd-rsp",
+				 "sa-tx0";
 
 	netcp-devices {
 		#address-cells = <1>;
@@ -345,6 +347,26 @@ netcp: netcp@2000000 {
 				};
 			};
 		};
+
+		sa@c0000 {
+			label = "netcp-sa";
+			multi-interface;
+			/* Optional: Specify NATT port for fragmentation detection */
+			natt-port = <0>;
+			tx-submit-queue = <646>;
+
+			interfaces {
+				sa0: interface-0 {
+					slave-port	= <0>;
+					ti,tx-channel = "sa-tx0";
+				};
+
+				sa1: interface-1 {
+					slave-port	= <1>;
+					ti,tx-channel = "sa-tx0";
+				};
+			};
+		};
 	};
 
 	netcp-interfaces {
@@ -359,7 +381,7 @@ netcp: netcp@2000000 {
 			efuse-mac = <1>;
 			netcp-gbe = <&gbe0>;
 			netcp-pa = <&pa0>;
-
+			netcp-sa = <&sa0>;
 		};
 		interface-1 {
 			rx-channel = "netrx1";
@@ -373,6 +395,7 @@ netcp: netcp@2000000 {
 			local-mac-address = [02 18 31 7e 3e 6f];
 			netcp-gbe = <&gbe1>;
 			netcp-pa = <&pa1>;
+			netcp-sa = <&sa1>;
 		};
 	};
 };
