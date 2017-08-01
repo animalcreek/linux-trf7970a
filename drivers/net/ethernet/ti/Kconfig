@@ -135,6 +135,15 @@ config TI_KEYSTONE_NETCP_PA2
           <file:Documentation/arm/keystone/netcp-pa.txt> to know more details
 	  about the driver.
 
+config TI_KEYSTONE_NETCP_SA
+	tristate "TI Keystone inflow Security Accelerator mode Support"
+	depends on TI_KEYSTONE_NETCP
+	default TI_KEYSTONE_NETCP
+	---help---
+
+	  This driver supports TI Keystone inflow Security Accelerator
+	  mode.
+
 config TLAN
 	tristate "TI ThunderLAN support"
 	depends on (PCI || EISA)
