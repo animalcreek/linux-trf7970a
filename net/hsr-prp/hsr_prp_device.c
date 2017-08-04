@@ -477,6 +477,8 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 			 struct net_device *slave[2],
 			 unsigned char multicast_spec, u8 protocol_version)
 {
+	netdev_features_t mask =
+		NETIF_F_HW_PRP_RX_OFFLOAD | NETIF_F_HW_HSR_RX_OFFLOAD;
 	struct hsr_prp_priv *priv;
 	struct hsr_prp_port *port;
 	int res;
@@ -539,12 +541,32 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 	if (res)
 		return res;
 
+	if (priv->prot_version == PRP_V1) {
+		if ((slave[0]->features & NETIF_F_HW_HSR_RX_OFFLOAD) ||
+		    (slave[1]->features & NETIF_F_HW_HSR_RX_OFFLOAD)) {
+			res = -EINVAL;
+			goto fail;
+		}
+	} else {
+		if ((slave[0]->features & NETIF_F_HW_PRP_RX_OFFLOAD) ||
+		    (slave[1]->features & NETIF_F_HW_PRP_RX_OFFLOAD)) {
+			res = -EINVAL;
+			goto fail;
+		}
+	}
+
 	/* HSR/PRP LRE Rx offload supported in lower device? */
 	if (((slave[0]->features & NETIF_F_HW_HSR_RX_OFFLOAD) &&
 	     (slave[1]->features & NETIF_F_HW_HSR_RX_OFFLOAD)) ||
 	     ((slave[0]->features & NETIF_F_HW_PRP_RX_OFFLOAD) &&
 	     (slave[1]->features & NETIF_F_HW_PRP_RX_OFFLOAD)))
 		priv->rx_offloaded = true;
+
+	/* Make sure offload flags match in the slave devices */
+	if ((slave[0]->features & mask) ^ (slave[1]->features & mask)) {
+		res = -EINVAL;
+		goto fail;
+	}
 
 	/* HSR LRE L2 forward offload supported in lower device for hsr? */
 	if ((priv->prot_version < PRP_V1) &&
