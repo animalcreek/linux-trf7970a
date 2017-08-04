@@ -546,9 +546,10 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 	     (slave[1]->features & NETIF_F_HW_PRP_RX_OFFLOAD)))
 		priv->rx_offloaded = true;
 
-	/* HSR LRE L2 forward offload supported in lower device? */
-	if ((slave[0]->features & NETIF_F_HW_L2FW_DOFFLOAD) &&
-	    (slave[1]->features & NETIF_F_HW_L2FW_DOFFLOAD))
+	/* HSR LRE L2 forward offload supported in lower device for hsr? */
+	if ((priv->prot_version < PRP_V1) &&
+	    ((slave[0]->features & NETIF_F_HW_L2FW_DOFFLOAD) &&
+	     (slave[1]->features & NETIF_F_HW_L2FW_DOFFLOAD)))
 		priv->l2_fwd_offloaded = true;
 
 	res = register_netdevice(hsr_prp_dev);
