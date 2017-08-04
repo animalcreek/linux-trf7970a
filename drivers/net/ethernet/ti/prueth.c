@@ -3185,8 +3185,7 @@ static int prueth_netdev_init(struct prueth *prueth,
 		ndev->features |= (NETIF_F_HW_HSR_RX_OFFLOAD |
 				   NETIF_F_HW_L2FW_DOFFLOAD);
 	else if (PRUETH_IS_PRP(prueth))
-		ndev->features |= (NETIF_F_HW_PRP_RX_OFFLOAD |
-				   NETIF_F_HW_L2FW_DOFFLOAD);
+		ndev->features |= NETIF_F_HW_PRP_RX_OFFLOAD;
 
 	ndev->netdev_ops = &emac_netdev_ops;
 	ndev->ethtool_ops = &emac_ethtool_ops;
