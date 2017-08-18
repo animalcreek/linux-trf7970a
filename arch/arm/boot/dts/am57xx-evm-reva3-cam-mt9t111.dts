@@ -6,6 +6,6 @@
  * published by the Free Software Foundation.
  */
 
-#include "am57xx-evm-reva3.dts"
+#include "am57xx-evm-reva3-base.dts"
 #include "am57xx-evm-common-cam-mt9t111.dtsi"
 
