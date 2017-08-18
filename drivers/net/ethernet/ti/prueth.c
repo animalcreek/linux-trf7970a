@@ -3965,19 +3965,21 @@ static int prueth_netdev_init(struct prueth *prueth,
 		goto free;
 	}
 
-	emac->sw_rx_irq = of_irq_get_byname(eth_node, "red-rx");
-	if (emac->sw_rx_irq < 0) {
-		ret = emac->sw_rx_irq;
-		if (ret != -EPROBE_DEFER)
-			dev_err(prueth->dev, "could not get switch rx irq\n");
-		goto free;
-	}
-	emac->sw_tx_irq = of_irq_get_byname(eth_node, "red-tx");
-	if (emac->sw_tx_irq < 0) {
-		ret = emac->sw_tx_irq;
-		if (ret != -EPROBE_DEFER)
-			dev_err(prueth->dev, "could not get switch tx irq\n");
-		goto free;
+	if (PRUETH_HAS_SWITCH(prueth)) {
+		emac->sw_rx_irq = of_irq_get_byname(eth_node, "red-rx");
+		if (emac->sw_rx_irq < 0) {
+			ret = emac->sw_rx_irq;
+			if (ret != -EPROBE_DEFER)
+				dev_err(prueth->dev, "could not get switch rx irq\n");
+			goto free;
+		}
+		emac->sw_tx_irq = of_irq_get_byname(eth_node, "red-tx");
+		if (emac->sw_tx_irq < 0) {
+			ret = emac->sw_tx_irq;
+			if (ret != -EPROBE_DEFER)
+				dev_err(prueth->dev, "could not get switch tx irq\n");
+			goto free;
+		}
 	}
 
 	emac->msg_enable = netif_msg_init(debug_level, PRUETH_EMAC_DEBUG);
