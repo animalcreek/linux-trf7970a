@@ -6,8 +6,6 @@
  * published by the Free Software Foundation.
  */
 
-#include "am572x-idk.dts"
-
 / {
 	reserved-memory {
 		jailhouse: jailhouse@ef000000 {
