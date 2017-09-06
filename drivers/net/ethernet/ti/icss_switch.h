@@ -215,6 +215,15 @@
 /* Shared RAM offsets for EMAC */
 #define EMAC_P0_Q1_DESC_OFFSET_AFTER_BD	72
 
+/* Promiscuous mode control */
+#define EMAC_P1_PROMISCUOUS_BIT		BIT(0)
+#define EMAC_P2_PROMISCUOUS_BIT		BIT(1)
+/* EMAC_PROMISCUOUS_MODE_OFFSET is relative to EOF_48K_BUFFER_BD. Since
+ * we calculate the offsets dynamically, define it as 4 relative to
+ * eof_48k_buffer_bd in prueth_mmap_sram_cfg
+ */
+#define EMAC_PROMISCUOUS_MODE_OFFSET	4
+
 /* Shared RAM offsets for both Switch and EMAC */
 #define P0_Q1_BD_OFFSET		SRAM_START_OFFSET
 
