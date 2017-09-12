@@ -94,17 +94,24 @@ hsr_prp_stats_show(struct seq_file *sfp, void *data)
 	master = hsr_prp_get_port(priv, HSR_PRP_PT_MASTER);
 	rcu_read_unlock();
 
-	seq_puts(sfp, "Stats entries\n");
+	seq_puts(sfp, "LRE Stats entries\n");
 	seq_printf(sfp, "cnt_tx_a = %d\n", priv->stats.cnt_tx_a);
 	seq_printf(sfp, "cnt_tx_b = %d\n", priv->stats.cnt_tx_b);
-	seq_printf(sfp, "cnt_tx_c = %ld\n", master->dev->stats.tx_packets);
+	/* actually lre_tx_c is whatever sent to the application interface. So
+	 * same as rx_packets
+	 */
+	seq_printf(sfp, "cnt_tx_c = %ld\n", master->dev->stats.rx_packets);
+	seq_printf(sfp, "cnt_tx_sup = %d\n", priv->stats.cnt_tx_sup);
 	seq_printf(sfp, "cnt_rx_wrong_lan_a = %d\n",
 		   priv->stats.cnt_rx_wrong_lan_a);
 	seq_printf(sfp, "cnt_rx_wrong_lan_b = %d\n",
 		   priv->stats.cnt_rx_wrong_lan_b);
 	seq_printf(sfp, "cnt_rx_a = %d\n", priv->stats.cnt_rx_a);
 	seq_printf(sfp, "cnt_rx_b = %d\n", priv->stats.cnt_rx_b);
-	seq_printf(sfp, "cnt_rx_c = %ld\n", master->dev->stats.rx_packets);
+	/* actually lre_rx_c is whatever received from the application
+	 * interface,  So same as tx_packets
+	 */
+	seq_printf(sfp, "cnt_rx_c = %ld\n", master->dev->stats.tx_packets);
 	seq_printf(sfp, "cnt_rx_errors_a = %d\n", priv->stats.cnt_rx_errors_a);
 	seq_printf(sfp, "cnt_rx_errors_b = %d\n", priv->stats.cnt_rx_errors_b);
 	if (priv->prot_version <= HSR_V1) {

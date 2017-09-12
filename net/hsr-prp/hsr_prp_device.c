@@ -340,6 +340,7 @@ static void send_supervision_frame(struct hsr_prp_port *master,
 	}
 	spin_unlock_irqrestore(&master->priv->seqnr_lock, irqflags);
 	hsr_prp_forward_skb(skb, master);
+	INC_CNT_TX_SUP(master->priv);
 	return;
 
 out:
