@@ -850,14 +850,14 @@ static int keystone_crypto_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_3;
 
-	/* Register crypto algorithms */
-	sa_register_algos(dev);
-
 	ret = sa_request_firmware(dev);
 	if (ret < 0)
 		goto err_3;
 
 	platform_set_drvdata(pdev, dev_data);
+
+	/* Register crypto algorithms */
+	sa_register_algos(dev);
 
 	dev_info(dev, "crypto accelerator enabled\n");
 	return 0;
