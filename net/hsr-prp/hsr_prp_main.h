@@ -199,6 +199,7 @@ struct hsr_prp_lre_if_stats {
 	u32	cnt_rx_errors_b;
 	u32	cnt_own_rx_a; /* For HSR only */
 	u32	cnt_own_rx_b; /* For HSR only */
+	u32	cnt_tx_sup;
 };
 
 struct hsr_prp_port {
@@ -326,6 +327,7 @@ void hsr_prp_unregister_notifier(u8 proto);
 		priv->stats.cnt_rx_errors_a++ : priv->stats.cnt_rx_errors_b++)
 #define INC_CNT_OWN_RX(type, priv) (((type) == HSR_PRP_PT_SLAVE_A) ? \
 		priv->stats.cnt_own_rx_a++ : priv->stats.cnt_own_rx_b++)
+#define INC_CNT_TX_SUP(priv) ((priv)->stats.cnt_tx_sup++)
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 int hsr_prp_debugfs_init(struct hsr_prp_priv *priv,
