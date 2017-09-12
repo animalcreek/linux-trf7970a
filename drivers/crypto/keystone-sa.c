@@ -41,6 +41,15 @@
 #include "keystone-sa.h"
 #include "keystone-sa-hlp.h"
 
+#define SA_ATTR(_name, _mode, _show, _store) \
+	struct sa_kobj_attribute sa_attr_##_name = \
+__ATTR(_name, _mode, _show, _store)
+
+#define to_sa_kobj_attr(_attr) \
+	container_of(_attr, struct sa_kobj_attribute, attr)
+#define to_crypto_data_from_stats_obj(obj) \
+	container_of(obj, struct keystone_crypto_data, stats_kobj)
+
 struct device *sa_ks2_dev;
 /**
  * sa_allocate_rx_buf() - Allocate ONE receive buffer for Rx descriptors
@@ -463,6 +472,153 @@ fail:
 	return error;
 }
 
+/*	SYSFS interface functions    */
+struct sa_kobj_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct keystone_crypto_data *crypto,
+			struct sa_kobj_attribute *attr, char *buf);
+	ssize_t	(*store)(struct keystone_crypto_data *crypto,
+			 struct sa_kobj_attribute *attr, const char *, size_t);
+};
+
+static
+ssize_t sa_stats_show_tx_pkts(struct keystone_crypto_data *crypto,
+			      struct sa_kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			atomic_read(&crypto->stats.tx_pkts));
+}
+
+static
+ssize_t sa_stats_reset_tx_pkts(struct keystone_crypto_data *crypto,
+			       struct sa_kobj_attribute *attr,
+			       const char *buf, size_t len)
+{
+	atomic_set(&crypto->stats.tx_pkts, 0);
+	return len;
+}
+
+static
+ssize_t sa_stats_show_rx_pkts(struct keystone_crypto_data *crypto,
+			      struct sa_kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			 atomic_read(&crypto->stats.rx_pkts));
+}
+
+static ssize_t sa_stats_reset_rx_pkts(struct keystone_crypto_data *crypto,
+				      struct sa_kobj_attribute *attr,
+				      const char *buf, size_t len)
+{
+	atomic_set(&crypto->stats.rx_pkts, 0);
+	return len;
+}
+
+static
+ssize_t sa_stats_show_tx_drop_pkts(struct keystone_crypto_data *crypto,
+				   struct sa_kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			atomic_read(&crypto->stats.tx_dropped));
+}
+
+static
+ssize_t sa_stats_reset_tx_drop_pkts(struct keystone_crypto_data *crypto,
+				    struct sa_kobj_attribute *attr,
+				    const char *buf, size_t len)
+{
+	atomic_set(&crypto->stats.tx_dropped, 0);
+	return len;
+}
+
+static ssize_t
+sa_stats_show_sc_tear_drop_pkts(struct keystone_crypto_data *crypto,
+				struct sa_kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			atomic_read(&crypto->stats.sc_tear_dropped));
+}
+
+static SA_ATTR(tx_pkts, S_IRUGO | S_IWUSR,
+	       sa_stats_show_tx_pkts, sa_stats_reset_tx_pkts);
+static SA_ATTR(rx_pkts, S_IRUGO | S_IWUSR,
+	       sa_stats_show_rx_pkts, sa_stats_reset_rx_pkts);
+static SA_ATTR(tx_drop_pkts, S_IRUGO | S_IWUSR,
+	       sa_stats_show_tx_drop_pkts, sa_stats_reset_tx_drop_pkts);
+static SA_ATTR(sc_tear_drop_pkts, S_IRUGO,
+	       sa_stats_show_sc_tear_drop_pkts, NULL);
+
+static struct attribute *sa_stats_attrs[] = {
+	&sa_attr_tx_pkts.attr,
+	&sa_attr_rx_pkts.attr,
+	&sa_attr_tx_drop_pkts.attr,
+	&sa_attr_sc_tear_drop_pkts.attr,
+	NULL
+};
+
+static ssize_t sa_kobj_attr_show(struct kobject *kobj, struct attribute *attr,
+				 char *buf)
+{
+	struct sa_kobj_attribute *sa_attr = to_sa_kobj_attr(attr);
+	struct keystone_crypto_data *crypto =
+		to_crypto_data_from_stats_obj(kobj);
+	ssize_t ret = -EIO;
+
+	if (sa_attr->show)
+		ret = sa_attr->show(crypto, sa_attr, buf);
+	return ret;
+}
+
+static
+ssize_t sa_kobj_attr_store(struct kobject *kobj, struct attribute *attr,
+			   const char *buf, size_t len)
+{
+	struct sa_kobj_attribute *sa_attr = to_sa_kobj_attr(attr);
+	struct keystone_crypto_data *crypto =
+		to_crypto_data_from_stats_obj(kobj);
+	ssize_t ret = -EIO;
+
+	if (sa_attr->store)
+		ret = sa_attr->store(crypto, sa_attr, buf, len);
+	return ret;
+}
+
+static const struct sysfs_ops sa_stats_sysfs_ops = {
+	.show = sa_kobj_attr_show,
+	.store = sa_kobj_attr_store,
+};
+
+static struct kobj_type sa_stats_ktype = {
+	.sysfs_ops = &sa_stats_sysfs_ops,
+	.default_attrs = sa_stats_attrs,
+};
+
+static int sa_create_sysfs_entries(struct keystone_crypto_data *crypto)
+{
+	struct device *dev = &crypto->pdev->dev;
+	int ret;
+
+	ret = kobject_init_and_add(&crypto->stats_kobj, &sa_stats_ktype,
+				   kobject_get(&dev->kobj), "stats");
+
+	if (ret) {
+		dev_err(dev, "failed to create sysfs entry\n");
+		kobject_put(&crypto->stats_kobj);
+		kobject_put(&dev->kobj);
+	}
+
+	if (!ret)
+		crypto->stats_fl = 1;
+
+	return ret;
+}
+
+static void sa_delete_sysfs_entries(struct keystone_crypto_data *crypto)
+{
+	if (crypto->stats_fl)
+		kobject_del(&crypto->stats_kobj);
+}
+
 static int sa_read_dtb(struct device_node *node,
 		       struct keystone_crypto_data *dev_data)
 {
@@ -571,6 +727,8 @@ static int keystone_crypto_remove(struct platform_device *pdev)
 	/* un-register crypto algorithms */
 	sa_unregister_algos(&pdev->dev);
 
+	/* Delete SYSFS entries */
+	sa_delete_sysfs_entries(dev_data);
 	/* Release DMA resources */
 	ret = sa_free_resources(dev_data);
 	/* Kill tasklets */
@@ -654,6 +812,12 @@ static int keystone_crypto_probe(struct platform_device *pdev)
 
 	tasklet_init(&dev_data->tx_task, sa_tx_task, (unsigned long)dev_data);
 
+	/* Initialize statistic counters */
+	atomic_set(&dev_data->stats.tx_dropped, 0);
+	atomic_set(&dev_data->stats.sc_tear_dropped, 0);
+	atomic_set(&dev_data->stats.tx_pkts, 0);
+	atomic_set(&dev_data->stats.rx_pkts, 0);
+
 	/* Initialize memory pools used by the driver */
 	dev_data->sc_pool = dma_pool_create("keystone-sc", dev,
 				SA_CTX_MAX_SZ, 64, 0);
@@ -680,6 +844,11 @@ static int keystone_crypto_probe(struct platform_device *pdev)
 
 	/* Initialize the SC-ID allocation lock */
 	spin_lock_init(&dev_data->scid_lock);
+
+	/* Create sysfs entries */
+	ret = sa_create_sysfs_entries(dev_data);
+	if (ret)
+		goto err_3;
 
 	/* Register crypto algorithms */
 	sa_register_algos(dev);

@@ -66,6 +66,18 @@
 #define	SA_PA_ENG_ID_OFS	0x18
 #define	SA_CDMA_ENG_ID_OFS	0x1C
 
+/* Driver statistics */
+struct sa_drv_stats {
+	/* Number of data pkts dropped while submitting to CP_ACE */
+	atomic_t tx_dropped;
+	/* Number of tear-down pkts dropped while submitting to CP_ACE */
+	atomic_t sc_tear_dropped;
+	/* Number of crypto requests sent to CP_ACE */
+	atomic_t tx_pkts;
+	/* Number of crypto request completions received from CP_ACE */
+	atomic_t rx_pkts;
+};
+
 /* Crypto driver instance data */
 struct keystone_crypto_data {
 	struct platform_device	*pdev;
@@ -98,6 +110,7 @@ struct keystone_crypto_data {
 
 	spinlock_t	scid_lock; /* lock for SC-ID allocation */
 
+	struct kobject	stats_kobj;
 	int		stats_fl;
 
 	/* Security context data */
@@ -108,6 +121,9 @@ struct keystone_crypto_data {
 	/* Bitmap to keep track of Security context ID's */
 	unsigned long	ctx_bm[DIV_ROUND_UP(SA_MAX_NUM_CTX,
 				BITS_PER_LONG)];
+
+	/* Driver stats */
+	struct sa_drv_stats	stats;
 	atomic_t	rx_dma_page_cnt; /* N buf from 2nd pool available */
 	atomic_t	tx_dma_desc_cnt; /* Tx DMA desc-s available */
 };
