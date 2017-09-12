@@ -540,15 +540,12 @@ int sa_init_sc(struct sa_ctx_info *ctx, const u8 *enc_key,
 	hash_size = roundup(hash_size, 8);
 
 	sa_set_swinfo(first_engine, ctx->sc_id, ctx->sc_phys, 1, 0,
-#ifndef TEST
-		      0,
-#else
 	/*
 	 * For run-time self tests in the cryptographic
-	 * algorithm manager framework
+	 * algorithm manager framework the EVICT flag is required.
+	 * EVICT is also required if the key gets changed for the context.
 	 */
 		      SA_SW_INFO_FLAG_EVICT,
-#endif
 		      ctx->rx_compl_qid, ctx->rx_flow, hash_size, swinfo);
 
 	sa_dump_sc(sc_buf, ctx->sc_phys);
