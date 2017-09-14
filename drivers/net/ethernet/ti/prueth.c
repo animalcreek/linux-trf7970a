@@ -3496,7 +3496,7 @@ static void emac_ndo_set_rx_mode(struct net_device *ndev)
 	u32 reg, mask;
 
 	if (PRUETH_HAS_SWITCH(prueth)) {
-		netdev_err(ndev,
+		netdev_dbg(ndev,
 			   "%s: promisc mode not supported for switch\n",
 			   __func__);
 		return;
