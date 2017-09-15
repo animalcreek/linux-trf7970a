@@ -226,7 +226,6 @@ struct prueth_emac {
 
 	struct prueth_queue_desc __iomem *rx_queue_descs;
 	struct prueth_queue_desc __iomem *tx_queue_descs;
-	struct prueth_queue_desc __iomem *rx_colq_descs;
 	struct prueth_queue_desc __iomem *tx_colq_descs;
 
 	struct port_statistics stats; /* stats holder when i/f is down */
@@ -1092,10 +1091,6 @@ static int prueth_sw_hostconfig(struct prueth *prueth)
 	writew(pb->queue_size[PRUETH_QUEUE2], dram + 2);
 	writew(pb->queue_size[PRUETH_QUEUE3], dram + 4);
 	writew(pb->queue_size[PRUETH_QUEUE4], dram + 6);
-
-	dram = dram1_base + pb->col_queue_desc_offset;
-	memcpy_toio(dram, &queue_descs[PRUETH_PORT_QUEUE_HOST][PRUETH_COLQ],
-		    sizeof(queue_descs[PRUETH_PORT_QUEUE_HOST][PRUETH_COLQ]));
 
 	/* queue table */
 	dram = dram1_base + pb->queue1_desc_offset;
@@ -2270,17 +2265,6 @@ static int emac_rx_packets(struct prueth_emac *emac, int quota)
 			writew(update_rd_ptr, &queue_desc->rd_ptr);
 			bd_rd_ptr = update_rd_ptr;
 
-			/* if switch and buffer is from colq, update colq
-			 * wr_ptr and clear col status reg bit to indicate
-			 * host has read the pkt. Emac won't go in here as
-			 * shaddow = false
-			 */
-			if (pkt_info.shadow && !rx_err) {
-				colq_desc = emac->rx_colq_descs;
-				writew(colq_desc->rd_ptr, &colq_desc->wr_ptr);
-				writeb(0, dram1 + COLLISION_STATUS_ADDR);
-			}
-
 			/* all we have room for? */
 			if (used >= quota)
 				return used;
@@ -2495,8 +2479,6 @@ static int emac_calculate_queue_offsets(struct prueth *prueth,
 		if (PRUETH_HAS_SWITCH(prueth)) {
 			emac->rx_queue_descs =
 				dram1 + pb0->queue1_desc_offset;
-			emac->rx_colq_descs  =
-				dram1 + pb0->col_queue_desc_offset;
 			emac->tx_queue_descs =
 				dram1 + pb->queue1_desc_offset;
 			emac->tx_colq_descs  =
@@ -2511,8 +2493,6 @@ static int emac_calculate_queue_offsets(struct prueth *prueth,
 		if (PRUETH_HAS_SWITCH(prueth)) {
 			emac->rx_queue_descs =
 				dram1 + pb0->queue1_desc_offset;
-			emac->rx_colq_descs  =
-				dram1 + pb0->col_queue_desc_offset;
 			emac->tx_queue_descs =
 				dram1 + pb->queue1_desc_offset;
 			emac->tx_colq_descs  =
