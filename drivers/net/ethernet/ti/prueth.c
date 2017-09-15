@@ -76,7 +76,6 @@ static int debug_level = -1;
 module_param(debug_level, int, 0);
 MODULE_PARM_DESC(debug_level, "PRUETH debug level (NETIF_MSG bits)");
 
-#define EMAC_POLL_WEIGHT	(64) /* Default NAPI poll weight */
 #define EMAC_MAX_PKTLEN		(ETH_HLEN + VLAN_HLEN + ETH_DATA_LEN)
 #define EMAC_MIN_PKTLEN		(60)
 
@@ -207,7 +206,6 @@ struct prueth_emac {
 	struct prueth *prueth;
 	struct net_device *ndev;
 	u8 mac_addr[6];
-	struct napi_struct napi;
 	u32 msg_enable;
 
 	int link;
@@ -1809,30 +1807,6 @@ static irqreturn_t emac_tx_hardirq(int irq, void *dev_id)
 }
 
 /**
- * emac_rx_hardirq - EMAC Rx interrupt handler
- * @irq: interrupt number
- * @dev_id: pointer to net_device
- *
- * EMAC Interrupt handler - we only schedule NAPI and not process any packets
- * here.
- *
- * Returns interrupt handled condition
- */
-static irqreturn_t emac_rx_hardirq(int irq, void *dev_id)
-{
-	struct net_device *ndev = (struct net_device *)dev_id;
-	struct prueth_emac *emac = netdev_priv(ndev);
-
-	if (likely(netif_running(ndev))) {
-		/* disable Rx system event */
-		disable_irq_nosync(emac->rx_irq);
-		napi_schedule(&emac->napi);
-	}
-
-	return IRQ_HANDLED;
-}
-
-/**
  * prueth_tx_enqueue - queue a packet to firmware for transmission
  *
  * @emac: EMAC data structure
@@ -2153,7 +2127,7 @@ static int emac_rx_packet(struct prueth_emac *emac, u16 *bd_rd_ptr,
 	/* send packet up the stack */
 	skb_put(skb, pkt_info.length);
 	skb->protocol = eth_type_trans(skb, ndev);
-	netif_receive_skb(skb);
+	netif_rx(skb);
 
 	/* update stats */
 	ndev->stats.rx_bytes += pkt_info.length;
@@ -2162,9 +2136,10 @@ static int emac_rx_packet(struct prueth_emac *emac, u16 *bd_rd_ptr,
 	return 0;
 }
 
-/* get upto quota number of packets */
-static int emac_rx_packets(struct prueth_emac *emac, int quota)
+static irqreturn_t emac_rx_thread(int irq, void *dev_id)
 {
+	struct net_device *ndev = (struct net_device *)dev_id;
+	struct prueth_emac *emac = netdev_priv(ndev);
 	struct prueth_queue_desc __iomem *queue_desc, *colq_desc;
 	const struct prueth_queue_info *rxqueue;
 	struct prueth *prueth;
@@ -2176,7 +2151,7 @@ static int emac_rx_packets(struct prueth_emac *emac, int quota)
 	void __iomem *dram1 = emac->prueth->mem[PRUETH_MEM_DRAM1].va;
 	struct prueth_packet_info pkt_info;
 	struct net_device_stats *ndevstats = &emac->ndev->stats;
-	int i, j, ret, used = 0;
+	int i, j, ret;
 	struct prueth_emac *other_emac;
 	const unsigned int *prio_q_ids;
 	unsigned int q_cnt;
@@ -2250,9 +2225,7 @@ static int emac_rx_packets(struct prueth_emac *emac, int quota)
 				ret = emac_rx_packet(emac, &update_rd_ptr,
 						     pkt_info, rxqueue);
 				if (ret)
-					return ret;
-
-				used++;
+					return IRQ_HANDLED;
 			}
 
 			/* after reading the buffer descriptor we clear it
@@ -2264,14 +2237,9 @@ static int emac_rx_packets(struct prueth_emac *emac, int quota)
 			/* update read pointer in queue descriptor */
 			writew(update_rd_ptr, &queue_desc->rd_ptr);
 			bd_rd_ptr = update_rd_ptr;
-
-			/* all we have room for? */
-			if (used >= quota)
-				return used;
 		}
 	}
-
-	return used;
+	return IRQ_HANDLED;
 }
 
 /* get statistics maintained by the PRU firmware into @pstats */
@@ -2319,34 +2287,6 @@ static void emac_lre_set_stats(struct prueth_emac *emac,
 	pstats->duplicate_discard = readl(sram + LRE_DUPLICATE_DISCARD);
 	pstats->transparent_reception = readl(sram + LRE_TRANSPARENT_RECEPTION);
 	memcpy_fromio(sram + LRE_START + 4, pstats, sizeof(*pstats));
-}
-
-/**
- * emac_napi_poll - EMAC NAPI Poll function
- * @ndev: EMAC network adapter
- * @budget: Number of receive packets to process (as told by NAPI layer)
- *
- * NAPI Poll function implemented to process packets as per budget. We check
- * the type of interrupt on the device and accordingly call the TX or RX
- * packet processing functions. We follow the budget for RX processing and
- * also put a cap on number of TX pkts processed through config param. The
- * NAPI schedule function is called if more packets pending.
- *
- * Returns number of packets received (in most cases; else TX pkts - rarely)
- */
-static int emac_napi_poll(struct napi_struct *napi, int budget)
-{
-	struct prueth_emac *emac = container_of(napi, struct prueth_emac, napi);
-	int num_rx_packets;
-
-	num_rx_packets = emac_rx_packets(emac, budget);
-	if (num_rx_packets < budget) {
-		napi_complete(napi);
-
-		enable_irq(emac->rx_irq);
-	}
-
-	return num_rx_packets;
 }
 
 static int sw_emac_set_boot_pru(struct prueth_emac *emac,
@@ -3123,18 +3063,23 @@ static int emac_ndo_open(struct net_device *ndev)
 		return -EINVAL;
 	}
 
-	ret = request_irq(emac->rx_irq, emac_rx_hardirq, flags,
-			  ndev->name, ndev);
+	ret = request_threaded_irq(emac->rx_irq, NULL, emac_rx_thread, flags,
+				   ndev->name, ndev);
 	if (ret) {
 		netdev_err(ndev, "unable to request RX IRQ\n");
 		return ret;
 	}
 
-	ret = request_irq(emac->tx_irq, emac_tx_hardirq, flags,
-			  ndev->name, ndev);
-	if (ret) {
-		netdev_err(ndev, "unable to request TX IRQ\n");
-		goto free_rx_irq;
+	/* Currently switch firmware doesn't implement tx irq. So make it
+	 * conditional to non switch case
+	 */
+	if (!PRUETH_HAS_SWITCH(prueth)) {
+		ret = request_irq(emac->tx_irq, emac_tx_hardirq, flags,
+				  ndev->name, ndev);
+		if (ret) {
+			netdev_err(ndev, "unable to request TX IRQ\n");
+			goto free_rx_irq;
+		}
 	}
 
 	/* set h/w MAC as user might have re-configured */
@@ -3214,7 +3159,6 @@ static int emac_ndo_open(struct net_device *ndev)
 
 	/* start PHY */
 	phy_start(emac->phydev);
-	napi_enable(&emac->napi);
 
 	/* enable the port */
 	prueth_port_enable(prueth, emac->port_id, true);
@@ -3237,7 +3181,8 @@ clean_debugfs:
 		prueth_hsr_prp_debugfs_term(prueth);
 free_irq:
 	mutex_unlock(&prueth->mlock);
-	free_irq(emac->tx_irq, ndev);
+	if (!PRUETH_HAS_SWITCH(prueth))
+		free_irq(emac->tx_irq, ndev);
 free_rx_irq:
 	free_irq(emac->rx_irq, ndev);
 
@@ -3249,8 +3194,9 @@ static int sw_emac_pru_stop(struct prueth_emac *emac, struct net_device *ndev)
 	struct prueth *prueth = emac->prueth;
 
 	prueth->emac_configured &= ~BIT(emac->port_id);
-	free_irq(emac->tx_irq, emac->ndev);
+	/* disable and free rx irq */
 	free_irq(emac->rx_irq, emac->ndev);
+	disable_irq(emac->rx_irq);
 
 	/* another emac is still in use, don't stop the PRUs */
 	if (prueth->emac_configured)
@@ -3259,9 +3205,6 @@ static int sw_emac_pru_stop(struct prueth_emac *emac, struct net_device *ndev)
 	prueth_hsr_prp_debugfs_term(prueth);
 	rproc_shutdown(prueth->pru0);
 	rproc_shutdown(prueth->pru1);
-	/* disable and free rx and tx interrupts */
-	disable_irq(emac->tx_irq);
-	disable_irq(emac->rx_irq);
 	emac_lre_get_stats(emac, &emac->prueth->lre_stats);
 
 	if (PRUETH_HAS_RED(emac->prueth)) {
@@ -3312,7 +3255,6 @@ static int emac_ndo_stop(struct net_device *ndev)
 
 	/* inform the upper layers. */
 	netif_stop_queue(ndev);
-	napi_disable(&emac->napi);
 	netif_carrier_off(ndev);
 
 	/* stop PHY */
@@ -3925,8 +3867,6 @@ static int prueth_netdev_init(struct prueth *prueth,
 	ndev->netdev_ops = &emac_netdev_ops;
 	ndev->ethtool_ops = &emac_ethtool_ops;
 
-	netif_napi_add(ndev, &emac->napi, emac_napi_poll, EMAC_POLL_WEIGHT);
-
 	return 0;
 
 free:
@@ -3954,7 +3894,6 @@ static void prueth_netdev_exit(struct prueth *prueth,
 
 	phy_disconnect(emac->phydev);
 
-	netif_napi_del(&emac->napi);
 	free_netdev(emac->ndev);
 	prueth->emac[port] = NULL;
 }
