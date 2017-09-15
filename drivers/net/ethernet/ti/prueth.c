@@ -319,7 +319,6 @@ struct prueth {
 	unsigned int node_table_clear;
 	unsigned int tbl_check_mask;
 	struct timer_list tbl_check_timer;
-	u8 pcp_rxq_map[PCP_GROUP_TO_QUEUE_MAP_SIZE];
 	struct prueth_mmap_port_cfg_basis mmap_port_cfg_basis[PRUETH_PORT_MAX];
 	struct prueth_mmap_sram_cfg mmap_sram_cfg;
 	struct prueth_mmap_ocmc_cfg mmap_ocmc_cfg;
@@ -2411,7 +2410,6 @@ static int emac_calculate_queue_offsets(struct prueth *prueth,
 
 	port = prueth_node_port(eth_node);
 
-	/* TODO BEGIN, Probably below has to be moved to ndo_open as well */
 	pb0 = &prueth->mmap_port_cfg_basis[PRUETH_PORT_HOST];
 	pb  = &prueth->mmap_port_cfg_basis[port];
 	switch (port) {
@@ -3163,14 +3161,6 @@ static int emac_ndo_open(struct net_device *ndev)
 	/* enable the port */
 	prueth_port_enable(prueth, emac->port_id, true);
 
-	if (PRUETH_HAS_RED(prueth))
-		dev_info(&ndev->dev,
-			 "pcp-rxq-map (lo2hi->): %u %u %u %u %u %u %u %u\n",
-			 prueth->pcp_rxq_map[0], prueth->pcp_rxq_map[1],
-			 prueth->pcp_rxq_map[2], prueth->pcp_rxq_map[3],
-			 prueth->pcp_rxq_map[4], prueth->pcp_rxq_map[5],
-			 prueth->pcp_rxq_map[6], prueth->pcp_rxq_map[7]);
-
 	if (netif_msg_drv(emac))
 		dev_notice(&ndev->dev, "started\n");
 
@@ -3312,8 +3302,6 @@ static int emac_ndo_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 	u16 qid;
 
 	if (unlikely(!emac->link)) {
-		if (netif_msg_tx_err(emac) && net_ratelimit())
-			netdev_err(ndev, "No link to transmit");
 		ret = -ENOLINK;
 		goto fail_tx;
 	}
