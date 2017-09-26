@@ -71,6 +71,8 @@ void sa_conv_calg_to_salg(const char *cra_name, int *ealg_id, int *aalg_id)
 	} else if (!strcmp(cra_name, "authenc(xcbc(aes),cbc(des3_ede))")) {
 		*ealg_id = SA_EALG_ID_3DES_CBC;
 		*aalg_id = SA_AALG_ID_AES_XCBC;
+	} else if (!strcmp(cra_name, "rfc4106(gcm(aes))")) {
+		*ealg_id = SA_EALG_ID_GCM;
 	} else if (!strcmp(cra_name, "cbc(aes)")) {
 		*ealg_id = SA_EALG_ID_AES_CBC;
 	} else if (!strcmp(cra_name, "cbc(des3_ede)")) {
@@ -92,7 +94,7 @@ struct sa_eng_info sa_eng_info_tbl[SA_ALG_ID_LAST] = {
 	[SA_EALG_ID_DES_CBC]	= { SA_ENG_ID_EM1, SA_CTX_ENC_TYPE1_SZ},
 	[SA_EALG_ID_3DES_CBC]	= { SA_ENG_ID_EM1, SA_CTX_ENC_TYPE1_SZ},
 	[SA_EALG_ID_CCM]	= { SA_ENG_ID_NONE, 0},
-	[SA_EALG_ID_GCM]	= { SA_ENG_ID_NONE, 0},
+	[SA_EALG_ID_GCM]	= { SA_ENG_ID_EM1, SA_CTX_ENC_TYPE2_SZ},
 	[SA_AALG_ID_NULL]	= { SA_ENG_ID_NONE, 0},
 	[SA_AALG_ID_MD5]	= { SA_ENG_ID_NONE, 0},
 	[SA_AALG_ID_SHA1]	= { SA_ENG_ID_NONE, 0},
@@ -228,6 +230,20 @@ void sa_hmac_sha1_get_pad(const u8 *key, u16 key_sz, u32 *ipad, u32 *opad)
 		opad[i] = cpu_to_be32(opad[i]);
 }
 
+/* Derive GHASH to be used in the GCM algorithm */
+void sa_calc_ghash(const u8 *key, u16 key_sz, u8 *ghash)
+{
+	struct AES_KEY enc_key;
+
+	if (private_AES_set_encrypt_key(key, key_sz, &enc_key) == -1) {
+		pr_err("ERROR (%s): failed to set enc key\n", __func__);
+		return;
+	}
+
+	memset(ghash, 0x00, AES_BLOCK_SIZE);
+	AES_encrypt(ghash, ghash, &enc_key);
+}
+
 /* Derive the inverse key used in AES-CBC decryption operation */
 static inline int sa_aes_inv_key(u8 *inv_key, const u8 *key, u16 key_sz)
 {
@@ -294,6 +310,11 @@ int sa_set_sc_enc(u16 alg_id, const u8 *key, u16 key_sz,
 		break;
 
 	case SA_EALG_ID_GCM:
+		/*
+		 * TODO: Add support for ESN.
+		 */
+		aad_len = 8;
+
 		mci = (enc) ? sa_mci_tbl.aes_enc[SA_ENG_ALGO_GCM][key_idx] :
 			sa_mci_tbl.aes_dec[SA_ENG_ALGO_GCM][key_idx];
 		/* Set AAD length at byte offset 23 in Aux-1 */
@@ -301,6 +322,7 @@ int sa_set_sc_enc(u16 alg_id, const u8 *key, u16 key_sz,
 		/* fall through to GMAC */
 
 	case SA_AALG_ID_GMAC:
+		sa_calc_ghash(key, (key_sz << 3), ghash);
 		/* copy GCM Hash in Aux-1 */
 		memcpy(&sc_buf[SC_ENC_AUX1_OFFSET], ghash, 16);
 		break;

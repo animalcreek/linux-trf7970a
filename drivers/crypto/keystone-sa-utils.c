@@ -55,6 +55,10 @@
 #define SA_CMDL_UPD_AUTH_IV	0x0008
 #define SA_CMDL_UPD_AUX_KEY	0x0010
 
+/* Command label parameters for GCM */
+#define SA_CMDL_UPD_ENC_SIZE	0x0080
+#define SA_CMDL_UPD_AAD			0x0010
+
 /* size of SCCTL structure in bytes */
 #define SA_SCCTL_SZ 8
 
@@ -169,6 +173,7 @@ struct sa_cmdl_cfg {
 	u8	iv_size;
 	const u8 *akey;
 	u16	akey_len;
+	u32	salt;
 };
 
 /* Format general command label */
@@ -354,6 +359,68 @@ static int sa_format_cmdl_gen(struct sa_cmdl_cfg *cfg, u8 *cmdl,
 	return offset;
 }
 
+/*
+ * Format GCM command label
+ *
+ *   1-Command Header (4 Bytes)
+ *              -  NESC (1 byte)
+ *              -  Cmdl Len (1 byte)
+ *              -  Payload Size (2 bytes)
+ *
+ *   2 - Control information (4 bytes)
+ *               - Offset (1 bytes)
+ *               - Opt Ctrl1 (1 bytes)
+ *               - Opt Ctrl2 (1 byte)
+ *               - Opt Ctrl3 (1 byte)
+ *
+ *   3 - Option 1  - Total Encryption Length (8 bytes)
+ *
+ *   4 - Option 2: AAD (16 bytes)
+ *
+ *   5 - Option 3: AES-CTR IV (salt (4 bytes) | IV (16 bytes) | 1)
+ */
+static int sa_format_cmdl_gcm(struct sa_cmdl_cfg *cfg, u8 *cmdl,
+			      struct sa_cmdl_upd_info *upd_info)
+{
+	u8 offset = 0;
+	u32 *word_ptr = (u32 *)cmdl;
+	int i;
+
+	/* Clear the command label */
+	memset(cmdl, 0, (SA_MAX_CMDL_WORDS * sizeof(u32)));
+
+	/* Iniialize the command update structure */
+	memset(upd_info, 0, sizeof(*upd_info));
+	upd_info->submode = SA_MODE_GCM;
+
+	/* Construct Command label header */
+	cmdl[SA_CMDL_OFFSET_NESC] = SA_ENG_ID_FINAL;
+	cmdl[SA_CMDL_OFFSET_LABEL_LEN] = SA_GCM_SIZE;
+	cmdl[SA_CMDL_OFFSET_OPTION_CTRL1] = SA_GCM_OPT1;
+	cmdl[SA_CMDL_OFFSET_OPTION_CTRL2] = SA_GCM_OPT2;
+	cmdl[SA_CMDL_OFFSET_OPTION_CTRL3] = SA_GCM_OPT3;
+
+	/* Option 1: Total Encryption Length (8 bytes) */
+
+	/* Option 2: AAD (16 bytes) */
+
+	/* Option 3: AES-CTR IV (salt (4 bytes) | IV (8 bytes) | 0x1) */
+	/* Fill in the Salt Value */
+	word_ptr[8] = cfg->salt;
+
+	/*
+	 * Format the Command label into 32bit CPU words
+	 * from a big-endian stream
+	 */
+	offset = roundup(SA_GCM_SIZE, 8);
+
+	for (i = 0; i < offset/4; i++)
+		word_ptr[i] = be32_to_cpu(word_ptr[i]);
+
+	word_ptr[11] = 1;
+	return offset;
+}
+
 static inline void sa_copy_iv(u32 *out, const u8 *iv, bool size16)
 {
 	int j;
@@ -364,6 +431,10 @@ static inline void sa_copy_iv(u32 *out, const u8 *iv, bool size16)
 		out++;
 	}
 }
+
+/* Make 32-bit word from 4 bytes */
+#define SA_MK_U32(b0, b1, b2, b3) (((b0) << 24) | ((b1) << 16) | \
+				   ((b2) << 8) | (b3))
 
 /* Update Command label */
 static inline void
@@ -409,8 +480,33 @@ sa_update_cmdl(struct device *dev, u8 enc_offset, u16 enc_size,	u8 *enc_iv,
 		}
 		break;
 
-	case SA_MODE_CCM:
 	case SA_MODE_GCM:
+		/* Update  Command label header (8 bytes) */
+		cmdl[0] |= enc_size;
+		cmdl[1] |= (enc_offset << 24);
+
+		/* Option 1: Store encryption length (8 byte) */
+		cmdl[3] |= (enc_size << 3);
+
+		/* Option 2: Store AAD with zero padding (16 bytes) */
+		cmdl[4] = SA_MK_U32(aad[0], aad[1], aad[2], aad[3]);
+		cmdl[5] = SA_MK_U32(aad[4], aad[5], aad[6], aad[7]);
+
+		if (aad_size == 12) {
+			/*
+			 * Uncomment this when support for ESN is added
+			 * cmdl[6] =
+			 * SA_MK_U32(aad[8], aad[9], aad[10], aad[11]);
+			 */
+			dev_err(dev, "unsupported AAD size (%d)\n", aad_size);
+		}
+
+		/* Option 3: AES CTR IV (salt|IV|1) */
+		cmdl[9] = SA_MK_U32(enc_iv[0], enc_iv[1], enc_iv[2], enc_iv[3]);
+		cmdl[10] = SA_MK_U32(enc_iv[4], enc_iv[5], enc_iv[6], enc_iv[7]);
+		break;
+
+	case SA_MODE_CCM:
 	case SA_MODE_GMAC:
 	default:
 		dev_err(dev, "unsupported mode(%d)\n", upd_info->submode);
@@ -530,15 +626,21 @@ int sa_init_sc(struct sa_ctx_info *ctx, const u8 *enc_key,
 	sa_swiz_128(sc_buf, sc_buf, SA_CTX_MAX_SZ);
 
 	/* Setup SWINFO */
-	if (ealg_id == SA_EALG_ID_NULL)
+	if (ealg_id == SA_EALG_ID_GCM) {
+		/* For GCM enc and dec performed by same engine */
+		first_engine = enc_eng->eng_id;
+	} else if (ealg_id == SA_EALG_ID_NULL)
 		first_engine = auth_eng->eng_id;
 	else
 		first_engine = enc ? enc_eng->eng_id : auth_eng->eng_id;
 
-	/* TODO: take care of AEAD algorithms */
-	hash_size = sa_get_hash_size(aalg_id);
-	if (!hash_size)
-		return -EINVAL;
+	hash_size = AES_BLOCK_SIZE;
+	if (aalg_id != SA_AALG_ID_NONE) {
+		hash_size = sa_get_hash_size(aalg_id);
+		if (!hash_size)
+			return -EINVAL;
+	}
+
 	/* Round up the tag size to multiple of 8 */
 	hash_size = roundup(hash_size, 8);
 
@@ -731,6 +833,20 @@ static int sa_init_tfm(struct crypto_tfm *tfm)
 		__func__, tfm, ctx->enc.sc_id, ctx->enc.sc_phys,
 		ctx->dec.sc_id, ctx->dec.sc_phys);
 	return 0;
+}
+
+static int sa_gcm_get_aad(struct aead_request *req, u8 *aad, u8 *aad_len)
+{
+	struct scatter_walk walk;
+	int ret = 0;
+
+	*aad_len = req->assoclen - crypto_aead_ivsize(crypto_aead_reqtfm(req));
+
+	scatterwalk_start(&walk, req->src);
+	scatterwalk_copychunks(aad, &walk, *aad_len, 0);
+	scatterwalk_done(&walk, 0, 0);
+
+	return ret;
 }
 
 /* Algorithm init */
@@ -1187,7 +1303,7 @@ static int sa_aead_perform(struct aead_request *req, u8 *iv, bool enc)
 	int psdata_offset, ret = 0;
 	u8 auth_offset = 0;
 	u8 *auth_iv = NULL;
-	u8 *aad = NULL;
+	u8 aad[16];
 	u8 aad_len = 0;
 	u16 enc_len;
 	u16 auth_len;
@@ -1208,6 +1324,10 @@ static int sa_aead_perform(struct aead_request *req, u8 *iv, bool enc)
 		auth_len = req->assoclen + req->cryptlen -
 			crypto_aead_authsize(tfm);
 	}
+
+	/* Parse out AAD values */
+	if (sa_ctx->cmdl_upd_info.submode == SA_MODE_GCM)
+		sa_gcm_get_aad(req, aad, &aad_len);
 
 	/* Allocate descriptor & submit packet */
 	sg_nents = sg_count(req->src, auth_len);
@@ -1308,6 +1428,76 @@ static int sa_aead_encrypt(struct aead_request *req)
 static int sa_aead_decrypt(struct aead_request *req)
 {
 	return sa_aead_perform(req, req->iv, false);
+}
+
+/* GCM algorithm configuration interface function */
+static int sa_aead_gcm_setkey(struct crypto_aead *authenc,
+								const u8 *key, unsigned int keylen)
+{
+	struct sa_tfm_ctx *ctx = crypto_aead_ctx(authenc);
+	unsigned int enckey_len;
+	struct sa_eng_info *enc_eng;
+	int ealg_id, aalg_id, cmdl_len;
+	struct sa_cmdl_cfg cfg;
+	u8 const *enc_key;
+	const char *cra_name;
+	u32 *temp_key;
+
+	enckey_len = keylen - 4;
+	enc_key = key;
+	keylen -= 4;
+
+	cra_name = crypto_tfm_alg_name(crypto_aead_tfm(authenc));
+
+	sa_conv_calg_to_salg(cra_name, &ealg_id, &aalg_id);
+	enc_eng = sa_get_engine_info(ealg_id);
+
+	memset(&cfg, 0, sizeof(cfg));
+	cfg.enc_eng_id = enc_eng->eng_id;
+	cfg.iv_size = crypto_aead_ivsize(authenc);
+
+	/* Prpoerties not applicable to GCM */
+	cfg.aalg = SA_EALG_ID_NONE;
+	cfg.auth_eng_id = SA_ENG_ID_NONE;
+	cfg.akey = NULL;
+	cfg.akey_len = 0;
+
+	/* Store Salt/NONCE value */
+	temp_key = (u32 *) &key[keylen];
+	cfg.salt = *temp_key;
+
+	/* Setup Encryption Security Context & Command label template */
+	if (sa_init_sc(&ctx->enc, enc_key, enckey_len, NULL,
+					0, cra_name, 1, &ctx->enc.epib[1]))
+		goto badkey;
+
+	cmdl_len = sa_format_cmdl_gcm(&cfg,
+				      (u8 *)ctx->enc.cmdl,
+				      &ctx->enc.cmdl_upd_info);
+	if ((cmdl_len <= 0) || (cmdl_len > SA_MAX_CMDL_WORDS * sizeof(u32)))
+		goto badkey;
+
+	ctx->enc.cmdl_size = cmdl_len;
+
+	/* Setup Decryption Security Context & Command label template */
+	if (sa_init_sc(&ctx->dec, enc_key, enckey_len, NULL,
+					0, cra_name, 0, &ctx->dec.epib[1]))
+		goto badkey;
+
+	cmdl_len = sa_format_cmdl_gcm(&cfg,
+				      (u8 *)ctx->dec.cmdl,
+				      &ctx->dec.cmdl_upd_info);
+	if ((cmdl_len <= 0) || (cmdl_len > SA_MAX_CMDL_WORDS * sizeof(u32)))
+		goto badkey;
+
+	ctx->dec.cmdl_size = cmdl_len;
+
+	return 0;
+
+badkey:
+	dev_err(sa_ks2_dev, "%s: badkey\n", __func__);
+	crypto_aead_set_flags(authenc, CRYPTO_TFM_RES_BAD_KEY_LEN);
+	return -EINVAL;
 }
 
 static struct sa_alg_tmpl sa_algs[] = {
@@ -1429,6 +1619,30 @@ static struct sa_alg_tmpl sa_algs[] = {
 			.init = sa_cra_init_aead,
 			.exit = sa_exit_tfm_aead,
 			.setkey	= sa_aead_setkey,
+			.encrypt = sa_aead_encrypt,
+			.decrypt = sa_aead_decrypt,
+		}
+	},
+	{	.type = CRYPTO_ALG_TYPE_AEAD,
+		.alg.aead = {
+			.base = {
+				.cra_name = "rfc4106(gcm(aes))",
+				.cra_driver_name =
+					"rfc4106-gcm-aes-keystone-sa",
+				.cra_blocksize = AES_BLOCK_SIZE,
+				.cra_flags = CRYPTO_ALG_TYPE_AEAD |
+					CRYPTO_ALG_KERN_DRIVER_ONLY |
+					CRYPTO_ALG_ASYNC,
+				.cra_ctxsize = sizeof(struct sa_tfm_ctx),
+				.cra_module = THIS_MODULE,
+				.cra_alignmask = 0,
+				.cra_priority = 3000,
+			},
+			.ivsize = 8,
+			.maxauthsize = AES_BLOCK_SIZE,
+			.init = sa_cra_init_aead,
+			.exit = sa_exit_tfm_aead,
+			.setkey	= sa_aead_gcm_setkey,
 			.encrypt = sa_aead_encrypt,
 			.decrypt = sa_aead_decrypt,
 		}
