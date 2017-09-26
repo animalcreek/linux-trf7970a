@@ -514,14 +514,10 @@ sa_update_cmdl(struct device *dev, u8 enc_offset, u16 enc_size,	u8 *enc_iv,
 		cmdl[4] = SA_MK_U32(aad[0], aad[1], aad[2], aad[3]);
 		cmdl[5] = SA_MK_U32(aad[4], aad[5], aad[6], aad[7]);
 
+		/* ESN */
 		if (aad_size == 12) {
-			/*
-			 * Uncomment this when support for
-			 * ESN is added
-			 * cmdl[6] =
-			 * SA_MK_U32(aad[8], aad[9], aad[10], aad[11]);
-			 */
-			dev_err(dev, "unsupported AAD size (%d)\n", aad_size);
+			cmdl[6] =
+				SA_MK_U32(aad[8], aad[9], aad[10], aad[11]);
 		}
 
 		/* Option 3: AES CTR IV (salt|IV|1) */
@@ -532,11 +528,8 @@ sa_update_cmdl(struct device *dev, u8 enc_offset, u16 enc_size,	u8 *enc_iv,
 	case SA_MODE_GMAC:
 		/* Update  Command label header (8 bytes) */
 
-		/* Payload Length + IV Size - Data Appended */
-		cmdl[0] |= enc_size;
-
-		/* Auth offset - Data Appended */
-		cmdl[1] |= (16 << 24);	/* AAD Size + IV (remaining) */
+		/* Auth offset - 16 bytes */
+		cmdl[1] |= (16 << 24);
 
 		/* Option 1: Store Authentication length (8 byte) */
 		cmdl[3] |= (auth_size << 3);/* Payload Length + AAD + IV */
@@ -545,12 +538,20 @@ sa_update_cmdl(struct device *dev, u8 enc_offset, u16 enc_size,	u8 *enc_iv,
 		cmdl[4] = SA_MK_U32(aad[0], aad[1], aad[2], aad[3]);
 		cmdl[5] = SA_MK_U32(aad[4], aad[5], aad[6], aad[7]);
 
+		/* ESN */
 		if (aad_size == 12) {
-			/*
-			 *  Check for ESN
-			 */
-			dev_err(dev, "unsupported AAD size (%d)\n", aad_size);
+
+			/* Payload Length + Remaining IV Size */
+			cmdl[0] |= enc_size + 4;
+
+			cmdl[6] = SA_MK_U32(aad[8], aad[9], aad[10], aad[11]);
+			cmdl[7] = SA_MK_U32(enc_iv[0], enc_iv[1],
+					    enc_iv[2], enc_iv[3]);
 		} else {
+
+			/* Payload Length */
+			cmdl[0] |= enc_size;
+
 			/* Append IV */
 			cmdl[6] = SA_MK_U32(enc_iv[0], enc_iv[1],
 					enc_iv[2], enc_iv[3]);
@@ -559,10 +560,10 @@ sa_update_cmdl(struct device *dev, u8 enc_offset, u16 enc_size,	u8 *enc_iv,
 		}
 
 		/* Option 3: AES CTR IV (salt|IV|1) */
-		cmdl[9] =
-			SA_MK_U32(enc_iv[0], enc_iv[1], enc_iv[2], enc_iv[3]);
-		cmdl[10] =
-			SA_MK_U32(enc_iv[4], enc_iv[5], enc_iv[6], enc_iv[7]);
+		cmdl[9] = SA_MK_U32(enc_iv[0], enc_iv[1],
+				    enc_iv[2], enc_iv[3]);
+		cmdl[10] = SA_MK_U32(enc_iv[4], enc_iv[5],
+				     enc_iv[6], enc_iv[7]);
 		break;
 
 	case SA_MODE_CCM:
@@ -1390,9 +1391,31 @@ static int sa_aead_perform(struct aead_request *req, u8 *iv, bool enc)
 	}
 
 	/* Parse out AAD values */
-	if ((sa_ctx->cmdl_upd_info.submode == SA_MODE_GCM) ||
-		(sa_ctx->cmdl_upd_info.submode == SA_MODE_GMAC))
+	if (sa_ctx->cmdl_upd_info.submode == SA_MODE_GCM) {
 		sa_gcm_get_aad(req, aad, &aad_len);
+
+		/*
+		 * Set the AAD size to the configured
+		 * AAD size when first packet is received.
+		 * AAD size CANNOT be changed after this.
+		 */
+		if (sa_ctx->cmdl_upd_info.aad.index == 0) {
+			sa_ctx->cmdl_upd_info.aad.index = 0xFF;
+			sa_ctx->cmdl_upd_info.aad.size = aad_len;
+			sa_ctx->sc[SA_CTX_PHP_PE_CTX_SZ + 64 + 24] =
+				(aad_len << 3);
+		}
+
+		if (sa_ctx->cmdl_upd_info.aad.size != aad_len) {
+			atomic_inc(&pdata->stats.tx_dropped);
+			dev_err(sa_ks2_dev, "ERROR: AAD Size Mismatch (%d, %d)\n",
+				aad_len,
+				sa_ctx->cmdl_upd_info.aad.size);
+			return -EPERM;
+		}
+	} else if (sa_ctx->cmdl_upd_info.submode == SA_MODE_GMAC) {
+		sa_gcm_get_aad(req, aad, &aad_len);
+	}
 
 	/* Allocate descriptor & submit packet */
 	sg_nents = sg_count(req->src, auth_len);
@@ -1532,9 +1555,16 @@ static int sa_aead_gcm_setkey(struct crypto_aead *authenc,
 		memset(&ctx->enc.cmdl_upd_info, 0,
 				sizeof(struct sa_cmdl_upd_info));
 		ctx->enc.cmdl_upd_info.submode = SA_MODE_GCM;
+		/* Default AAD size to 8 */
+		ctx->enc.cmdl_upd_info.aad.size = 8;
+		ctx->enc.cmdl_upd_info.aad.index = 0;
+
 		memset(&ctx->dec.cmdl_upd_info, 0,
 				sizeof(struct sa_cmdl_upd_info));
 		ctx->dec.cmdl_upd_info.submode = SA_MODE_GCM;
+		/* Default AAD size to 8 */
+		ctx->dec.cmdl_upd_info.aad.size = 8;
+		ctx->dec.cmdl_upd_info.aad.index = 0;
 	} else {
 		/*  GMAC  */
 		auth_eng = sa_get_engine_info(aalg_id);
