@@ -539,7 +539,7 @@ int sa_set_sc_enc(u16 alg_id, const u8 *key, u16 key_sz,
 		break;
 
 	case SA_EALG_ID_GCM:
-		aad_len = 8;	/* ESN not supported */
+		aad_len = 8;	/* Default AAD size is 8 */
 
 		mci = (enc) ? sa_mci_tbl.aes_enc[SA_ENG_ALGO_GCM][key_idx] :
 			sa_mci_tbl.aes_dec[SA_ENG_ALGO_GCM][key_idx];
