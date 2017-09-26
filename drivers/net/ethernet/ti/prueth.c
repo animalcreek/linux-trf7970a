@@ -2139,7 +2139,7 @@ static irqreturn_t emac_rx_thread(int irq, void *dev_id)
 {
 	struct net_device *ndev = (struct net_device *)dev_id;
 	struct prueth_emac *emac = netdev_priv(ndev);
-	struct prueth_queue_desc __iomem *queue_desc, *colq_desc;
+	struct prueth_queue_desc __iomem *queue_desc;
 	const struct prueth_queue_info *rxqueue;
 	struct prueth *prueth;
 	u8 overflow_cnt;
@@ -2147,7 +2147,6 @@ static irqreturn_t emac_rx_thread(int irq, void *dev_id)
 	u16 bd_rd_ptr, bd_wr_ptr, update_rd_ptr;
 	u32 rd_buf_desc;
 	void __iomem *shared_ram = emac->prueth->mem[PRUETH_MEM_SHARED_RAM].va;
-	void __iomem *dram1 = emac->prueth->mem[PRUETH_MEM_DRAM1].va;
 	struct prueth_packet_info pkt_info;
 	struct net_device_stats *ndevstats = &emac->ndev->stats;
 	int i, j, ret;
