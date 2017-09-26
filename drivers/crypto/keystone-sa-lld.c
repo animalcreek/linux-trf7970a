@@ -59,6 +59,9 @@ void sa_conv_calg_to_salg(const char *cra_name, int *ealg_id, int *aalg_id)
 	if (!strcmp(cra_name, "authenc(hmac(sha1),cbc(aes))")) {
 		*ealg_id = SA_EALG_ID_AES_CBC;
 		*aalg_id = SA_AALG_ID_HMAC_SHA1;
+	} else if (!strcmp(cra_name, "authenc(hmac(sha1),ecb(cipher_null))")) {
+		*ealg_id = SA_EALG_ID_NULL;
+		*aalg_id = SA_AALG_ID_HMAC_SHA1;
 	} else if (!strcmp(cra_name, "authenc(hmac(sha1),cbc(des3_ede))")) {
 		*ealg_id = SA_EALG_ID_3DES_CBC;
 		*aalg_id = SA_AALG_ID_HMAC_SHA1;

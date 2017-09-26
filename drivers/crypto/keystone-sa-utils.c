@@ -530,7 +530,10 @@ int sa_init_sc(struct sa_ctx_info *ctx, const u8 *enc_key,
 	sa_swiz_128(sc_buf, sc_buf, SA_CTX_MAX_SZ);
 
 	/* Setup SWINFO */
-	first_engine = enc ? enc_eng->eng_id : auth_eng->eng_id;
+	if (ealg_id == SA_EALG_ID_NULL)
+		first_engine = auth_eng->eng_id;
+	else
+		first_engine = enc ? enc_eng->eng_id : auth_eng->eng_id;
 
 	/* TODO: take care of AEAD algorithms */
 	hash_size = sa_get_hash_size(aalg_id);
@@ -1399,6 +1402,30 @@ static struct sa_alg_tmpl sa_algs[] = {
 			},
 			.ivsize = DES3_EDE_BLOCK_SIZE,
 			.maxauthsize = AES_XCBC_DIGEST_SIZE,
+			.init = sa_cra_init_aead,
+			.exit = sa_exit_tfm_aead,
+			.setkey	= sa_aead_setkey,
+			.encrypt = sa_aead_encrypt,
+			.decrypt = sa_aead_decrypt,
+		}
+	},
+	{	.type = CRYPTO_ALG_TYPE_AEAD,
+		.alg.aead = {
+			.base = {
+				.cra_name = "authenc(hmac(sha1),ecb(cipher_null))",
+				.cra_driver_name =
+					"authenc-hmac-sha1-cipher_null-keystone-sa",
+				.cra_blocksize = NULL_BLOCK_SIZE,
+				.cra_flags = CRYPTO_ALG_TYPE_AEAD |
+					CRYPTO_ALG_KERN_DRIVER_ONLY |
+					CRYPTO_ALG_ASYNC,
+				.cra_ctxsize = sizeof(struct sa_tfm_ctx),
+				.cra_module = THIS_MODULE,
+				.cra_alignmask = 0,
+				.cra_priority = 3000,
+			},
+			.ivsize = NULL_IV_SIZE,
+			.maxauthsize = SHA1_DIGEST_SIZE,
 			.init = sa_cra_init_aead,
 			.exit = sa_exit_tfm_aead,
 			.setkey	= sa_aead_setkey,
