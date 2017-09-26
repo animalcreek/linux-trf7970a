@@ -86,6 +86,7 @@
 #define SA_ENG_ID_AM2 5	/* Authentication engine for pass 2 */
 #define SA_ENG_ID_OUTPORT2 20 /* Egress module 2 */
 #define SA_ENG_ID_NONE 0xff
+#define SA_ENG_ID_FINAL    SA_ENG_ID_OUTPORT2
 
 /*
  * Command Label Definitions
@@ -123,5 +124,13 @@
 #define SA_CMD_SA0_IN_EN	0x00000200
 #define SA_CMD_SA1_OUT_EN	0x00000400
 #define SA_CMD_SA0_OUT_EN	0x00000800
+
+/* GCM OPeration Definitions */
+#define SA_GCM_SIZE      48
+
+/*             OFFSET|LENGTH   (LENGTH - in number of bytes, 1 = 8 bytes) */
+#define SA_GCM_OPT1      ((SA_CTX_ENC_AUX1_OFFSET + 24) | (8 >> 3))
+#define SA_GCM_OPT2      (SA_CTX_ENC_AUX2_OFFSET | (16 >> 3))
+#define SA_GCM_OPT3      (SA_CTX_ENC_AUX3_OFFSET | (16 >> 3))
 
 #endif
