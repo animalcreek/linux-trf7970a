@@ -125,12 +125,20 @@
 #define SA_CMD_SA1_OUT_EN	0x00000400
 #define SA_CMD_SA0_OUT_EN	0x00000800
 
-/* GCM OPeration Definitions */
+/* GCM Operation Definitions */
 #define SA_GCM_SIZE      48
 
 /*             OFFSET|LENGTH   (LENGTH - in number of bytes, 1 = 8 bytes) */
 #define SA_GCM_OPT1      ((SA_CTX_ENC_AUX1_OFFSET + 24) | (8 >> 3))
 #define SA_GCM_OPT2      (SA_CTX_ENC_AUX2_OFFSET | (16 >> 3))
 #define SA_GCM_OPT3      (SA_CTX_ENC_AUX3_OFFSET | (16 >> 3))
+
+/* GMAC Operation Definitions */
+#define SA_GMAC_SIZE      48
+
+/*             OFFSET|LENGTH   (LENGTH - in number of bytes, 1 = 8 bytes) */
+#define SA_GMAC_OPT1      ((SA_CTX_ENC_AUX1_OFFSET + 16) | (8 >> 3))
+#define SA_GMAC_OPT2      (SA_CTX_ENC_AUX2_OFFSET | (16 >> 3))
+#define SA_GMAC_OPT3      (SA_CTX_ENC_AUX3_OFFSET | (16 >> 3))
 
 #endif

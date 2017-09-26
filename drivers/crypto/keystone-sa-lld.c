@@ -73,6 +73,8 @@ void sa_conv_calg_to_salg(const char *cra_name, int *ealg_id, int *aalg_id)
 		*aalg_id = SA_AALG_ID_AES_XCBC;
 	} else if (!strcmp(cra_name, "rfc4106(gcm(aes))")) {
 		*ealg_id = SA_EALG_ID_GCM;
+	} else if (!strcmp(cra_name, "rfc4543(gcm(aes))")) {
+		*aalg_id = SA_AALG_ID_GMAC;
 	} else if (!strcmp(cra_name, "cbc(aes)")) {
 		*ealg_id = SA_EALG_ID_AES_CBC;
 	} else if (!strcmp(cra_name, "cbc(des3_ede)")) {
@@ -104,7 +106,7 @@ struct sa_eng_info sa_eng_info_tbl[SA_ALG_ID_LAST] = {
 	[SA_AALG_ID_HMAC_SHA1]	= { SA_ENG_ID_AM1, SA_CTX_AUTH_TYPE2_SZ},
 	[SA_AALG_ID_HMAC_SHA2_224] = { SA_ENG_ID_NONE, 0},
 	[SA_AALG_ID_HMAC_SHA2_256] = { SA_ENG_ID_NONE, 0},
-	[SA_AALG_ID_GMAC]	= { SA_ENG_ID_NONE, 0},
+	[SA_AALG_ID_GMAC]	= { SA_ENG_ID_EM1, SA_CTX_ENC_TYPE2_SZ},
 	[SA_AALG_ID_CMAC]	= {SA_ENG_ID_EM1, SA_CTX_AUTH_TYPE1_SZ},
 	[SA_AALG_ID_CBC_MAC]	= { SA_ENG_ID_NONE, 0},
 	[SA_AALG_ID_AES_XCBC]	= {SA_ENG_ID_EM1, SA_CTX_AUTH_TYPE1_SZ}
@@ -149,6 +151,7 @@ int sa_get_hash_size(u16 aalg_id)
 
 	case SA_AALG_ID_AES_XCBC:
 	case SA_AALG_ID_CMAC:
+	case SA_AALG_ID_GMAC:
 		hash_size = AES_BLOCK_SIZE;
 		break;
 
@@ -319,9 +322,12 @@ int sa_set_sc_enc(u16 alg_id, const u8 *key, u16 key_sz,
 			sa_mci_tbl.aes_dec[SA_ENG_ALGO_GCM][key_idx];
 		/* Set AAD length at byte offset 23 in Aux-1 */
 		sc_buf[SC_ENC_AUX1_OFFSET + 23] = (aad_len << 3);
-		/* fall through to GMAC */
+		/* fall through to GMAC for hash */
 
 	case SA_AALG_ID_GMAC:
+		if (alg_id == SA_AALG_ID_GMAC)
+			mci = sa_mci_tbl.aes_enc[SA_ENG_ALGO_GMAC][key_idx];
+
 		sa_calc_ghash(key, (key_sz << 3), ghash);
 		/* copy GCM Hash in Aux-1 */
 		memcpy(&sc_buf[SC_ENC_AUX1_OFFSET], ghash, 16);
