@@ -3682,6 +3682,14 @@ static const struct {
 	{"lreNtLookupErrA", PRUETH_LRE_STAT_OFS(node_table_lookup_error_a)},
 	{"lreNtLookupErrB", PRUETH_LRE_STAT_OFS(node_table_lookup_error_b)},
 	{"lreNodeTableFull", PRUETH_LRE_STAT_OFS(node_table_full)},
+	{"lreTotalRxA", PRUETH_LRE_STAT_OFS(lre_total_rx_a)},
+	{"lreTotalRxB", PRUETH_LRE_STAT_OFS(lre_total_rx_b)},
+	{"lreOverflowPru0", PRUETH_LRE_STAT_OFS(lre_overflow_pru0)},
+	{"lreOverflowPru1", PRUETH_LRE_STAT_OFS(lre_overflow_pru1)},
+	{"lreDDCountPru0", PRUETH_LRE_STAT_OFS(lre_cnt_dd_pru0)},
+	{"lreDDCountPru1", PRUETH_LRE_STAT_OFS(lre_cnt_dd_pru1)},
+	{"lreCntSupPru0", PRUETH_LRE_STAT_OFS(lre_cnt_sup_pru0)},
+	{"lreCntSupPru1", PRUETH_LRE_STAT_OFS(lre_cnt_sup_pru1)},
 };
 
 static int emac_get_sset_count(struct net_device *ndev, int stringset)
