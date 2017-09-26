@@ -444,7 +444,7 @@ static int sa_format_cmdl_gcm(struct sa_cmdl_cfg *cfg, u8 *cmdl,
 		return offset;
 	}
 
-	dev_err(sa_ks2_dev, " (%s): Unsupported mode\n", __func__);
+	dev_err(sa_ks2_dev, "(%s): Unsupported mode\n", __func__);
 	return -1;
 }
 
@@ -459,14 +459,10 @@ static inline void sa_copy_iv(u32 *out, const u8 *iv, bool size16)
 	}
 }
 
-/* Make 32-bit word from 4 bytes */
-#define SA_MK_U32(b0, b1, b2, b3) (((b0) << 24) | ((b1) << 16) | \
-				   ((b2) << 8) | (b3))
-
 /* Update Command label */
 static inline void
 sa_update_cmdl(struct device *dev, u8 enc_offset, u16 enc_size,	u8 *enc_iv,
-	       u8 auth_offset, u16 auth_size, u8 *auth_iv, u8 aad_size,
+	       u16 auth_size, u8 *auth_iv, u8 aad_size,
 	       u8 *aad,	struct sa_cmdl_upd_info	*upd_info, u32 *cmdl)
 {
 	switch (upd_info->submode) {
@@ -520,7 +516,8 @@ sa_update_cmdl(struct device *dev, u8 enc_offset, u16 enc_size,	u8 *enc_iv,
 
 		if (aad_size == 12) {
 			/*
-			 * Uncomment this when support for ESN is added
+			 * Uncomment this when support for
+			 * ESN is added
 			 * cmdl[6] =
 			 * SA_MK_U32(aad[8], aad[9], aad[10], aad[11]);
 			 */
@@ -539,10 +536,10 @@ sa_update_cmdl(struct device *dev, u8 enc_offset, u16 enc_size,	u8 *enc_iv,
 		cmdl[0] |= enc_size;
 
 		/* Auth offset - Data Appended */
-		cmdl[1] |= (16 << 24);
+		cmdl[1] |= (16 << 24);	/* AAD Size + IV (remaining) */
 
 		/* Option 1: Store Authentication length (8 byte) */
-		cmdl[3] |= (auth_size << 3);	/* Payload Length + AAD + IV */
+		cmdl[3] |= (auth_size << 3);/* Payload Length + AAD + IV */
 
 		/* Option 2: Store AAD with zero padding (16 bytes) */
 		cmdl[4] = SA_MK_U32(aad[0], aad[1], aad[2], aad[3]);
@@ -562,10 +559,10 @@ sa_update_cmdl(struct device *dev, u8 enc_offset, u16 enc_size,	u8 *enc_iv,
 		}
 
 		/* Option 3: AES CTR IV (salt|IV|1) */
-		cmdl[9] = SA_MK_U32(enc_iv[0], enc_iv[1],
-				enc_iv[2], enc_iv[3]);
-		cmdl[10] = SA_MK_U32(enc_iv[4], enc_iv[5],
-				enc_iv[6], enc_iv[7]);
+		cmdl[9] =
+			SA_MK_U32(enc_iv[0], enc_iv[1], enc_iv[2], enc_iv[3]);
+		cmdl[10] =
+			SA_MK_U32(enc_iv[4], enc_iv[5], enc_iv[6], enc_iv[7]);
 		break;
 
 	case SA_MODE_CCM:
@@ -1369,7 +1366,6 @@ static int sa_aead_perform(struct aead_request *req, u8 *iv, bool enc)
 	u8 enc_offset;
 	int sg_nents;
 	int psdata_offset, ret = 0;
-	u8 auth_offset = req->assoclen;
 	u8 *auth_iv = NULL;
 	u8 aad[16];
 	u8 aad_len = 0;
@@ -1425,10 +1421,10 @@ static int sa_aead_perform(struct aead_request *req, u8 *iv, bool enc)
 	}
 
 	memcpy(req_ctx->cmdl, sa_ctx->cmdl, sa_ctx->cmdl_size);
+
 	/* Update Command Label */
 	sa_update_cmdl(sa_ks2_dev, enc_offset, enc_len,
-		       iv, auth_offset, auth_len,
-		       auth_iv, aad_len, aad,
+		       iv, auth_len, auth_iv, aad_len, aad,
 		       &sa_ctx->cmdl_upd_info, req_ctx->cmdl);
 
 	/*
@@ -1768,6 +1764,30 @@ static struct sa_alg_tmpl sa_algs[] = {
 			.init = sa_cra_init_aead,
 			.exit = sa_exit_tfm_aead,
 			.setkey	= sa_aead_gcm_setkey,
+			.encrypt = sa_aead_encrypt,
+			.decrypt = sa_aead_decrypt,
+		}
+	},
+	{	.type = CRYPTO_ALG_TYPE_AEAD,
+		.alg.aead = {
+			.base = {
+				.cra_name = "authenc(hmac(sha256),cbc(aes))",
+				.cra_driver_name =
+					"authenc-hmac-sha256-cbc-aes-keystone-sa",
+				.cra_blocksize = AES_BLOCK_SIZE,
+				.cra_flags = CRYPTO_ALG_TYPE_AEAD |
+					CRYPTO_ALG_KERN_DRIVER_ONLY |
+					CRYPTO_ALG_ASYNC,
+				.cra_ctxsize = sizeof(struct sa_tfm_ctx),
+				.cra_module = THIS_MODULE,
+				.cra_alignmask = 0,
+				.cra_priority = 3000,
+			},
+			.ivsize = AES_BLOCK_SIZE,
+			.maxauthsize = SHA256_DIGEST_SIZE,
+			.init = sa_cra_init_aead,
+			.exit = sa_exit_tfm_aead,
+			.setkey	= sa_aead_setkey,
 			.encrypt = sa_aead_encrypt,
 			.decrypt = sa_aead_decrypt,
 		}

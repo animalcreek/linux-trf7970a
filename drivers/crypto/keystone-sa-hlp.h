@@ -26,6 +26,10 @@
 #include <asm/aes_glue.h>
 #include <crypto/aes.h>
 
+/* Make 32-bit word from 4 bytes */
+#define SA_MK_U32(b0, b1, b2, b3) (((b0) << 24) | ((b1) << 16) | \
+				   ((b2) << 8) | (b3))
+
 #define AES_XCBC_DIGEST_SIZE	16
 
 /* Values for NULL algorithms */
