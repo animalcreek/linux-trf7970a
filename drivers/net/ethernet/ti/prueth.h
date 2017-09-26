@@ -239,6 +239,16 @@ struct lre_statistics {
 	u32 node_table_lookup_error_a;
 	u32 node_table_lookup_error_b;
 	u32 node_table_full;
+
+	/* additional debug counters */
+	u32 lre_total_rx_a; /* count of all frames received at port-A */
+	u32 lre_total_rx_b; /* count of all frames received at port-B */
+	u32 lre_overflow_pru0; /* count of overflow frames to host on PRU 0 */
+	u32 lre_overflow_pru1; /* count of overflow frames to host on PRU 1 */
+	u32 lre_cnt_dd_pru0; /* count of DD frames to host on PRU 0 */
+	u32 lre_cnt_dd_pru1; /* count of DD frames to host on PRU 1 */
+	u32 lre_cnt_sup_pru0; /* count of supervisor frames to host on PRU 0 */
+	u32 lre_cnt_sup_pru1; /* count of supervisor frames to host on PRU 1 */
 } __packed;
 
 struct prueth_hsr_prp_node {

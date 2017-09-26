@@ -214,6 +214,14 @@
 #define LRE_NODE_TABLE_LOOKUP_ERROR_A          (LRE_START + 112)
 #define LRE_NODE_TABLE_LOOKUP_ERROR_B          (LRE_START + 116)
 #define LRE_NODE_TABLE_FULL                    (LRE_START + 120)
+#define LRE_TOTAL_RX_A                         (LRE_START + 124)
+#define LRE_TOTAL_RX_B                         (LRE_START + 128)
+#define LRE_OVERFLOW_PRU0                      (LRE_START + 132)
+#define LRE_OVERFLOW_PRU1                      (LRE_START + 136)
+#define LRE_DD_PRU0                            (LRE_START + 140)
+#define LRE_DD_PRU1                            (LRE_START + 144)
+#define LRE_CNT_SUP_PRU0                       (LRE_START + 148)
+#define LRE_CNT_SUP_PRU1                       (LRE_START + 152)
 
 #define IEC62439_CONST_DUPLICATE_ACCEPT                 0x01
 #define IEC62439_CONST_DUPLICATE_DISCARD                0x02
