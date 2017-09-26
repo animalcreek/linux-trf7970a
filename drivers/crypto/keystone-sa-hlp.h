@@ -28,6 +28,12 @@
 
 #define AES_XCBC_DIGEST_SIZE	16
 
+/* Values for NULL algorithms */
+#define NULL_KEY_SIZE			0
+#define NULL_BLOCK_SIZE			1
+#define NULL_DIGEST_SIZE		0
+#define NULL_IV_SIZE			0
+
 /* Number of 32 bit words in EPIB  */
 #define SA_DMA_NUM_EPIB_WORDS	4
 
