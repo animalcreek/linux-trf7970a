@@ -4271,6 +4271,33 @@ static void emac_get_ethtool_stats(struct net_device *ndev,
 	}
 }
 
+/* This is a temporary HACK.
+ * The ethtool set_dump API is re-used here to allow user application
+ * to pass in the PTP master clock MAC ID. The PRU PRP firmware requires
+ * the master clock mac ID to filter out PTP event messages received
+ * from unexpected master clock. This will be removed once a more
+ * satisfactory resolution is found.
+ */
+static int emac_set_dump(struct net_device *ndev, struct ethtool_dump *dump)
+{
+	struct prueth_emac *emac = netdev_priv(ndev);
+	struct prueth *prueth = emac->prueth;
+	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
+	u8 *p;
+
+	if (!PRUETH_HAS_PTP(prueth))
+		return -ENOTSUPP;
+
+	if (dump->version != 0xface)
+		return -EOPNOTSUPP;
+
+	p = (u8 *)&dump->flag;
+	memcpy_toio(sram + SYNC_MASTER_MAC_OFFSET, p, 3);
+	p = (u8 *)&dump->len;
+	memcpy_toio(sram + SYNC_MASTER_MAC_OFFSET + 3, p + 1, 3);
+	return 0;
+}
+
 static int emac_get_ts_info(struct net_device *ndev,
 			    struct ethtool_ts_info *info)
 {
@@ -4310,6 +4337,7 @@ static const struct ethtool_ops emac_ethtool_ops = {
 	.get_drvinfo = emac_get_drvinfo,
 	.get_settings = emac_get_settings,
 	.set_settings = emac_set_settings,
+	.set_dump = emac_set_dump,
 	.get_link = ethtool_op_get_link,
 	.get_ts_info = emac_get_ts_info,
 	.get_sset_count = emac_get_sset_count,
