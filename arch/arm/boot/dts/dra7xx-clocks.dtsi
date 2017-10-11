@@ -201,6 +201,8 @@
 		compatible = "ti,omap4-dpll-m4xen-clock";
 		clocks = <&abe_dpll_clk_mux>, <&abe_dpll_bypass_clk_mux>;
 		reg = <0x01e0>, <0x01e4>, <0x01ec>, <0x01e8>;
+		assigned-clocks = <&dpll_abe_ck>;
+		assigned-clock-rates = <50000000>;
 	};
 
 	dpll_abe_x2_ck: dpll_abe_x2_ck {
@@ -2043,6 +2045,8 @@
 		clocks = <&timer_sys_clk_div>, <&sys_32k_ck>, <&sys_clkin2>, <&ref_clkin0_ck>, <&ref_clkin1_ck>, <&ref_clkin2_ck>, <&ref_clkin3_ck>, <&abe_giclk_div>, <&video1_div_clk>, <&video2_div_clk>, <&hdmi_div_clk>;
 		ti,bit-shift = <24>;
 		reg = <0x1830>;
+		assigned-clocks = <&timer16_gfclk_mux>;
+		assigned-clock-parents = <&abe_giclk_div>;
 	};
 
 	timer2_gfclk_mux: timer2_gfclk_mux@1738 {
