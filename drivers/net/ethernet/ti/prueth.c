@@ -3296,7 +3296,6 @@ static u16 prueth_get_tx_queue_id(struct prueth *prueth, struct sk_buff *skb)
 static int emac_ndo_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 	struct prueth_emac *emac = netdev_priv(ndev);
-	struct prueth *prueth = emac->prueth;
 	int ret = 0;
 	u16 qid;
 
@@ -3319,21 +3318,12 @@ static int emac_ndo_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 	}
 
 	if (ret) {
-		if (ret != -ENOBUFS && ret != -EBUSY &&
-		    netif_msg_tx_err(emac) && net_ratelimit()) {
-			netdev_err(ndev, "packet queue failed: %d\n", ret);
+		if (ret != -ENOBUFS && ret != -EBUSY) {
+			if (netif_msg_tx_err(emac) && net_ratelimit())
+				netdev_err(ndev,
+					   "packet queue failed: %d\n", ret);
 			goto fail_tx;
 		} else {
-			/* out of buffer or collision. stop queue and
-			 * return NETDEV_TX_BUSY. Core will re-send the
-			 * packet when queue is woke up by tx interrupt.
-			 * Right now we don't have tx interrupt generated
-			 * for switch firmware. So return NETDEV_TX_BUSY
-			 * for now and change it later once support is
-			 * available .
-			 */
-			if (!PRUETH_HAS_SWITCH(prueth))
-				netif_stop_queue(ndev);
 			return NETDEV_TX_BUSY;
 		}
 	}
