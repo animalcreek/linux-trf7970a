@@ -234,6 +234,9 @@ static void hsr_fill_tag(struct sk_buff *skb, struct hsr_prp_frame_info *frame,
 	unsigned char *pc;
 	int lsdu_size;
 
+	/* pad to minimum packet size which is 60 + 6 (HSR tag) */
+	skb_put_padto(skb, ETH_ZLEN + HSR_PRP_HLEN);
+
 	lsdu_size = skb->len - 14;
 	if (frame->is_vlan)
 		lsdu_size -= 4;
