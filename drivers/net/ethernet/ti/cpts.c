@@ -56,8 +56,17 @@ struct cpts_skb_cb_data {
 				OMAP_TIMER_IF_CTRL_REG, (val), 0)
 
 #define CPTS_TS_THRESH     98000000ULL
+#define CPTS_TS_THRESH2    80000000ULL
+#define CPTS_TMR_CMP_CNT    (CPTS_TMR_RELOAD_CNT + 200000)
+#define CPTS_TMR_RELOAD_CNT (0xFFFFFFFFUL - 100000000 / 50 + 1)
+
+static u32 tmr_reload_cnt = CPTS_TMR_RELOAD_CNT;
+static u32 tmr_reload_cnt_prev = CPTS_TMR_RELOAD_CNT;
+static int ts_correct;
+
 static void cpts_tmr_init(struct cpts *cpts);
 static irqreturn_t cpts_1pps_tmr_interrupt(int irq, void *dev_id);
+static void cpts_tmr_poll(struct cpts *cpts, bool cpts_poll);
 
 static int cpts_event_port(struct cpts_event *event)
 {
@@ -257,6 +266,9 @@ static int cpts_ptp_adjfreq(struct ptp_clock_info *ptp, s32 ppb)
 	cpts->cc.mult = neg_adj ? mult - diff : mult + diff;
 
 	spin_unlock_irqrestore(&cpts->lock, flags);
+
+	tmr_reload_cnt = neg_adj ? CPTS_TMR_RELOAD_CNT - (ppb + 0) / 500 :
+		CPTS_TMR_RELOAD_CNT + (ppb + 0) / 500;
 
 	return 0;
 }
@@ -774,6 +786,28 @@ void cpts_release(struct cpts *cpts)
 }
 EXPORT_SYMBOL_GPL(cpts_release);
 
+static u64 cpts_ts_read(struct cpts *cpts)
+{
+	u64 ns = 0;
+	struct cpts_event *event;
+	struct list_head *this, *next;
+
+	if (cpts_fifo_read(cpts, CPTS_EV_PUSH))
+		pr_err("cpts: ts_read: unable to obtain a time stamp\n");
+
+	list_for_each_safe(this, next, &cpts->events) {
+		event = list_entry(this, struct cpts_event, list);
+		if (event_type(event) == CPTS_EV_PUSH) {
+			list_del_init(&event->list);
+			list_add(&event->list, &cpts->pool);
+			ns = timecounter_cyc2time(&cpts->tc, event->low);
+			break;
+		}
+	}
+
+	return ns;
+}
+
 static void cpts_tmr_init(struct cpts *cpts)
 {
 	struct clk *parent;
@@ -808,6 +842,223 @@ static void cpts_tmr_init(struct cpts *cpts)
 	writel_relaxed(OMAP_TIMER_INT_OVERFLOW, cpts->odt->irq_ena);
 	__omap_dm_timer_write(cpts->odt, OMAP_TIMER_WAKEUP_EN_REG,
 			      OMAP_TIMER_INT_OVERFLOW, 0);
+}
+
+enum cpts_1pps_state {
+	/* Initial state: try to SYNC to the CPTS timestamp */
+	INIT = 0,
+	/* Sync State: track the clock drift, trigger timer
+	 * adjustment when the clock drift exceed 1 clock
+	 * boundary declare out of sync if the clock difference is more
+	 * than a 1ms
+	 */
+	SYNC = 1,
+	/* Adjust state: Wait for time adjust to take effect at the
+	 * timer reload time
+	 */
+	ADJUST = 2,
+	/* Wait state: PTP timestamp has been verified,
+	 * wait for next check period
+	 */
+	WAIT = 3
+};
+
+/* The reload counter value is going to affect all cycles after the next SYNC
+ * check. Therefore, we need to change the next expected drift value by
+ * updating the ts_correct value
+ */
+static void update_ts_correct(void)
+{
+	if (tmr_reload_cnt > tmr_reload_cnt_prev)
+		ts_correct -= (tmr_reload_cnt - tmr_reload_cnt_prev) * 50;
+	else
+		ts_correct += (tmr_reload_cnt_prev - tmr_reload_cnt) * 50;
+}
+
+static void cpts_tmr_poll(struct cpts *cpts, bool cpts_poll)
+{
+	static enum cpts_1pps_state state = INIT;
+	unsigned long flags;
+	u32 tmr_count, tmr_count2, count_exp, tmr_diff_abs;
+	s32 tmr_diff = 0;
+	int ts_val;
+	static int ts_val_prev;
+	static s32 trm_diff_prev;
+	u64 cpts_ts_short, cpts_ts, tmp64;
+	static u64 cpts_tsTrans;
+	bool updated = false;
+	static bool first;
+	static bool cpts_poll_mode;
+
+	if (!cpts)
+		return;
+
+	spin_lock_irqsave(&cpts->lock, flags);
+
+	tmr_count = READ_TCRR;
+	cpts_write32(cpts, TS_PUSH, ts_push);
+	tmr_count2 = READ_TCRR;
+	tmp64 = cpts_ts_read(cpts);
+	cpts_ts = tmp64;
+	cpts_ts_short = do_div(tmp64, 1000000000UL);
+
+	if (((cpts_poll_mode) && (!cpts_poll)) ||  /* ignore cpsw toll */
+	    ((!cpts_poll_mode) && (cpts_poll))) {  /* ignore cpts poll */
+		spin_unlock_irqrestore(&cpts->lock, flags);
+			return;
+	}
+
+	tmp64 = cpts_ts;
+	cpts_ts_short = do_div(tmp64, 100000000UL);
+
+	/* Timer poll state machine */
+	switch (state) {
+	case INIT:
+		if ((cpts_ts_short < CPTS_TS_THRESH) &&
+		    ((tmr_count2 - tmr_count) < 20)) {
+			/* The nominal delay of this operation about 9 ticks
+			 * We are able to compensate for the normal range 8-17
+			 * However, the simple compensation fials when the delay
+			 * is getting big, just skip this sample
+			 *
+			 * Calculate the expected tcrr value and update to it
+			 */
+			tmp64 = (100000000UL - cpts_ts_short);
+			do_div(tmp64, 50);
+			count_exp = (u32)tmp64;
+			count_exp = 0xFFFFFFFFUL - count_exp + 1;
+
+			WRITE_TCRR(count_exp + READ_TCRR - tmr_count2 + 9);
+
+			if (cpts_ts_short >= CPTS_TS_THRESH2) {
+				WRITE_TLDR(tmr_reload_cnt);
+				WRITE_TMAR(CPTS_TMR_CMP_CNT); /* 10 ms */
+
+				state = WAIT;
+				first = true;
+				cpts_poll_mode = true;
+				tmr_reload_cnt_prev = tmr_reload_cnt;
+				cpts_tsTrans = (cpts_ts - cpts_ts_short) +
+					100000000ULL;
+			}
+		}
+		break;
+
+	case ADJUST:
+		/* Wait for the ldr load to take effect */
+		if (cpts_ts >= cpts_tsTrans) {
+			u64 ts = cpts->hw_timestamp;
+			u32 ts_offset;
+
+			ts_offset = do_div(ts, 100000000UL);
+
+			ts_val = (ts_offset >= 50000000UL) ?
+				-(100000000UL - ts_offset) :
+				(ts_offset);
+
+			/* restore the timer period to 100ms */
+			WRITE_TLDR(tmr_reload_cnt);
+
+			if (tmr_reload_cnt != tmr_reload_cnt_prev)
+				update_ts_correct();
+
+			cpts_tsTrans += 100000000ULL;
+			state = WAIT;
+
+			tmr_reload_cnt_prev = tmr_reload_cnt;
+			ts_val_prev = ts_val;
+		}
+		break;
+
+	case WAIT:
+		/* Wait for the next poll period when the adjustment
+		 * has been taken effect
+		 */
+		if (cpts_ts < cpts_tsTrans)
+			break;
+
+		state = SYNC;
+		/* pass through */
+
+	case SYNC:
+		{
+			u64 ts = cpts->hw_timestamp;
+			u32 ts_offset;
+			int tsAdjust;
+
+			ts_offset = do_div(ts, 100000000UL);
+			ts_val = (ts_offset >= 50000000UL) ?
+				-(100000000UL - ts_offset) :
+				(ts_offset);
+			/* tsAjust should include the current error and the expected
+			 * drift for the next two cycles
+			 */
+			if (first) {
+				tsAdjust = ts_val;
+				first = false;
+			} else
+				tsAdjust = ts_val +
+					(ts_val - ts_val_prev + ts_correct) * 2;
+
+			tmr_diff = (tsAdjust < 0) ? (tsAdjust - 25) / 50 :
+				(tsAdjust + 25) / 50;
+
+			/* adjust tmr_diff if the reload value change,
+			 * which affect only the second cycle
+			 */
+			if (tmr_reload_cnt != tmr_reload_cnt_prev) {
+				if (tmr_reload_cnt > tmr_reload_cnt_prev)
+					tmr_diff -= (tmr_reload_cnt -
+						     tmr_reload_cnt_prev);
+				else
+					tmr_diff += (tmr_reload_cnt_prev -
+						     tmr_reload_cnt);
+			}
+
+			ts_correct = tmr_diff * 50;
+			ts_val_prev = ts_val;
+			tmr_diff_abs = abs(tmr_diff);
+
+			if (tmr_diff_abs) {
+				updated = true;
+				if (tmr_diff_abs < (1000000 / 50)) {
+					/* adjust ldr time for one period
+					 * instead of updating the tcrr directly
+					 */
+					WRITE_TLDR(tmr_reload_cnt + (u32)tmr_diff);
+					state = ADJUST;
+					trm_diff_prev = tmr_diff;
+				} else {
+					/* The error is more than 1 ms,
+					 * declare it is out of sync
+					 */
+					state = INIT;
+					cpts_poll_mode = false;
+					break;
+				}
+			} else {
+				if (tmr_reload_cnt != tmr_reload_cnt_prev) {
+					WRITE_TLDR(tmr_reload_cnt);
+					update_ts_correct();
+				}
+				state = WAIT;
+			}
+
+			cpts_tsTrans = (cpts_ts - cpts_ts_short) + 100000000ULL;
+			tmr_reload_cnt_prev = tmr_reload_cnt;
+
+			break;
+		} /* case SYNC */
+
+	} /* switch */
+
+	spin_unlock_irqrestore(&cpts->lock, flags);
+
+	cpts->count_prev = tmr_count;
+
+	/*	printk("cpts_tmr_poll(updated = %u): tmr_diff = %d, tmr_reload_cnt = %u,
+	 *	cpts_ts = %llu\n", updated, tmr_diff, tmr_reload_cnt, cpts_ts);
+	 */
 }
 
 static int int_cnt;
