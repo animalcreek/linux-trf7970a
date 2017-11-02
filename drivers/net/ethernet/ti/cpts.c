@@ -28,6 +28,9 @@
 #include <linux/workqueue.h>
 #include <linux/if_ether.h>
 #include <linux/if_vlan.h>
+#include <linux/irqreturn.h>
+#include <linux/interrupt.h>
+#include <linux/of_irq.h>
 
 #include "cpts.h"
 
@@ -39,6 +42,22 @@ struct cpts_skb_cb_data {
 
 #define cpts_read32(c, r)	readl_relaxed(&c->reg->r)
 #define cpts_write32(c, v, r)	writel_relaxed(v, &c->reg->r)
+
+#define READ_TCRR __omap_dm_timer_read(cpts->odt, OMAP_TIMER_COUNTER_REG, 0)
+#define WRITE_TCRR(val) __omap_dm_timer_write(cpts->odt, \
+				OMAP_TIMER_COUNTER_REG, (val), 0)
+#define WRITE_TLDR(val) __omap_dm_timer_write(cpts->odt, \
+				OMAP_TIMER_LOAD_REG, (val), 0)
+#define WRITE_TMAR(val) __omap_dm_timer_write(cpts->odt, \
+				OMAP_TIMER_MATCH_REG, (val), 0)
+#define WRITE_TCLR(val) __omap_dm_timer_write(cpts->odt, \
+				OMAP_TIMER_CTRL_REG, (val), 0)
+#define WRITE_TSICR(val) __omap_dm_timer_write(cpts->odt, \
+				OMAP_TIMER_IF_CTRL_REG, (val), 0)
+
+#define CPTS_TS_THRESH     98000000ULL
+static void cpts_tmr_init(struct cpts *cpts);
+static irqreturn_t cpts_1pps_tmr_interrupt(int irq, void *dev_id);
 
 static int cpts_event_port(struct cpts_event *event)
 {
@@ -613,6 +632,32 @@ static void cpts_calc_mult_shift(struct cpts *cpts)
 		 freq, cpts->cc.mult, cpts->cc.shift, (ns - NSEC_PER_SEC));
 }
 
+static int cpts_of_1pps_parse(struct cpts *cpts, struct device_node *node)
+{
+	struct device_node *np = NULL;
+
+	np = of_parse_phandle(node, "timers", 0);
+	if (!np) {
+		dev_err(cpts->dev, "device node lookup for pps timer failed\n");
+		return -ENXIO;
+	}
+
+	cpts->pps_tmr_irqn = of_irq_get(np, 0);
+	if(!cpts->pps_tmr_irqn) {
+		dev_err(cpts->dev, "cannot get 1pps timer interrupt number\n");
+	}
+
+	cpts->odt = omap_dm_timer_request_by_node(np);
+
+	if (IS_ERR(cpts->odt)) {
+		dev_err(cpts->dev, "request for 1pps timer failed: %ld\n",
+			PTR_ERR(cpts->odt));
+		return PTR_ERR(cpts->odt);
+	}
+
+	return 0;
+}
+
 static int cpts_of_parse(struct cpts *cpts, struct device_node *node)
 {
 	int ret = -EINVAL;
@@ -639,6 +684,11 @@ static int cpts_of_parse(struct cpts *cpts, struct device_node *node)
 
 	if (!of_property_read_u32(node, "cpts-ext-ts-inputs", &prop))
 		cpts->ext_ts_inputs = prop;
+
+	/* get timer for 1PPS */
+	ret = cpts_of_1pps_parse(cpts, node);
+	if (ret)
+		goto of_error;
 
 	return 0;
 
@@ -689,6 +739,20 @@ struct cpts *cpts_create(struct device *dev, void __iomem *regs,
 	 */
 	cpts->cc_mult = cpts->cc.mult;
 
+	omap_dm_timer_enable(cpts->odt);
+	cpts_tmr_init(cpts);
+
+	if (cpts->pps_tmr_irqn) {
+		ret = devm_request_irq(dev, cpts->pps_tmr_irqn,
+				       cpts_1pps_tmr_interrupt,
+				       0, "1pps_timer", cpts);
+		if (ret < 0) {
+			dev_err(dev, "unable to request 1pps timer IRQ %d (%d)\n",
+				cpts->pps_tmr_irqn, ret);
+			return ERR_PTR(ret);
+		}
+	}
+
 	return cpts;
 }
 EXPORT_SYMBOL_GPL(cpts_create);
@@ -698,12 +762,67 @@ void cpts_release(struct cpts *cpts)
 	if (!cpts)
 		return;
 
+	if (cpts->odt) {
+		omap_dm_timer_disable(cpts->odt);
+		omap_dm_timer_free(cpts->odt);
+	}
+
 	if (WARN_ON(!cpts->refclk))
 		return;
 
 	clk_unprepare(cpts->refclk);
 }
 EXPORT_SYMBOL_GPL(cpts_release);
+
+static void cpts_tmr_init(struct cpts *cpts)
+{
+	struct clk *parent;
+	int ret;
+
+	if (!cpts)
+		return;
+
+	parent = clk_get(&cpts->odt->pdev->dev, "abe_giclk_div");
+	if (IS_ERR(parent)) {
+		pr_err("%s: %s not found\n", __func__, "abe_giclk_div");
+		return;
+	} else {
+		ret = clk_set_parent(cpts->odt->fclk, parent);
+		if (ret < 0)
+			pr_err("%s: failed to set %s as parent\n", __func__,
+			       "abe_giclk_div");
+	}
+	/* initialize timer16 for 1pps generator */
+	WRITE_TCLR(0);
+	WRITE_TLDR(0xffffffff - 2000000 + 1); /* 100ms */
+	WRITE_TCRR(0xffffffff - 100000000); /* 500ms */
+	WRITE_TMAR(200000);
+//	WRITE_TCLR(BIT(12) | 2 << 10 | BIT(6) | BIT(1) | BIT(0));
+	WRITE_TCLR(BIT(1) | BIT(0));
+	WRITE_TSICR(BIT(2));
+
+	cpts->timstamp_prev = 0;
+	cpts->count_prev = 0xFFFFFFFF;
+	cpts->count_updated = false;
+
+	writel_relaxed(OMAP_TIMER_INT_OVERFLOW, cpts->odt->irq_ena);
+	__omap_dm_timer_write(cpts->odt, OMAP_TIMER_WAKEUP_EN_REG,
+			      OMAP_TIMER_INT_OVERFLOW, 0);
+}
+
+static int int_cnt;
+static irqreturn_t cpts_1pps_tmr_interrupt(int irq, void *dev_id)
+{
+	struct cpts *cpts = (struct cpts*)dev_id;
+
+	writel_relaxed(OMAP_TIMER_INT_OVERFLOW, cpts->odt->irq_stat);
+
+	int_cnt++;
+	if ((int_cnt % 100) == 0)
+		printk("cpts_1pps_tmr_interrupt %d\n", int_cnt);
+
+	return IRQ_HANDLED;
+}
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("TI CPTS driver");
