@@ -32,6 +32,7 @@
 #include <linux/skbuff.h>
 #include <linux/ptp_classify.h>
 #include <linux/timecounter.h>
+#include <../arch/arm/plat-omap/include/plat/dmtimer.h>
 
 struct cpsw_cpts {
 	u32 idver;                /* Identification and version */
@@ -138,6 +139,10 @@ struct cpts {
 	u32 hw_ts_enable;
 	u32 caps;
 	struct sk_buff_head txq;
+
+	struct omap_dm_timer *odt;/* timer for 1PPS generator */
+
+	int pps_tmr_irqn;
 };
 
 int cpts_rx_timestamp(struct cpts *cpts, struct sk_buff *skb);
