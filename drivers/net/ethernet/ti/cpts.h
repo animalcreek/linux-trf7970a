@@ -105,7 +105,7 @@ enum {
 #define CPTS_MAX_EVENTS 32
 
 #define CPTS_EVENT_RX_TX_TIMEOUT 20 /* ms */
-#define CPTS_EVENT_HWSTAMP_TIMEOUT 200 /* ms */
+#define CPTS_EVENT_HWSTAMP_TIMEOUT 50 /* ms */
 
 struct cpts_event {
 	struct list_head list;
@@ -141,6 +141,10 @@ struct cpts {
 	struct sk_buff_head txq;
 
 	struct omap_dm_timer *odt;/* timer for 1PPS generator */
+	u32 count_prev;
+	u64 hw_timestamp;
+	u64 timstamp_prev;
+	bool count_updated;
 
 	int pps_tmr_irqn;
 };
