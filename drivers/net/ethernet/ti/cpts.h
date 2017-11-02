@@ -146,6 +146,10 @@ struct cpts {
 	u64 timstamp_prev;
 	bool count_updated;
 
+	struct pinctrl *pins;
+	struct pinctrl_state *pin_state_pwm_off;
+	struct pinctrl_state *pin_state_pwm_on;
+
 	int pps_tmr_irqn;
 };
 

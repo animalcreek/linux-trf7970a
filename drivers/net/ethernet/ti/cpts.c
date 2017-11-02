@@ -667,6 +667,27 @@ static int cpts_of_1pps_parse(struct cpts *cpts, struct device_node *node)
 		return PTR_ERR(cpts->odt);
 	}
 
+	cpts->pins = devm_pinctrl_get(cpts->dev);
+	if (IS_ERR(cpts->pins)) {
+		dev_err(cpts->dev, "request for 1pps pins failed: %ld\n",
+			PTR_ERR(cpts->pins));
+		return PTR_ERR(cpts->pins);
+	}
+
+	cpts->pin_state_pwm_on = pinctrl_lookup_state(cpts->pins, "pwm_on");
+	if (IS_ERR(cpts->pin_state_pwm_on)) {
+		dev_err(cpts->dev, "lookup for pwm_on pin state failed: %ld\n",
+			PTR_ERR(cpts->pin_state_pwm_on));
+		return PTR_ERR(cpts->pin_state_pwm_on);
+	}
+
+	cpts->pin_state_pwm_off = pinctrl_lookup_state(cpts->pins, "pwm_off");
+	if (IS_ERR(cpts->pin_state_pwm_off)) {
+		dev_err(cpts->dev, "lookup for pwm_off pin state failed: %ld\n",
+			PTR_ERR(cpts->pin_state_pwm_off));
+		return PTR_ERR(cpts->pin_state_pwm_off);
+	}
+
 	return 0;
 }
 
@@ -777,6 +798,8 @@ void cpts_release(struct cpts *cpts)
 	if (cpts->odt) {
 		omap_dm_timer_disable(cpts->odt);
 		omap_dm_timer_free(cpts->odt);
+
+		devm_pinctrl_put(cpts->pins);
 	}
 
 	if (WARN_ON(!cpts->refclk))
@@ -842,6 +865,8 @@ static void cpts_tmr_init(struct cpts *cpts)
 	writel_relaxed(OMAP_TIMER_INT_OVERFLOW, cpts->odt->irq_ena);
 	__omap_dm_timer_write(cpts->odt, OMAP_TIMER_WAKEUP_EN_REG,
 			      OMAP_TIMER_INT_OVERFLOW, 0);
+
+	pinctrl_select_state(cpts->pins, cpts->pin_state_pwm_off);
 }
 
 enum cpts_1pps_state {
@@ -862,6 +887,14 @@ enum cpts_1pps_state {
 	 */
 	WAIT = 3
 };
+
+static void inline cpts_turn_on_off_1pps_output(struct cpts *cpts, u64 ts)
+{
+	if (ts > 915000000)
+		pinctrl_select_state(cpts->pins, cpts->pin_state_pwm_on);
+	else if ((ts < 100000000) && (ts >= 10000000))
+		pinctrl_select_state(cpts->pins, cpts->pin_state_pwm_off);
+}
 
 /* The reload counter value is going to affect all cycles after the next SYNC
  * check. Therefore, we need to change the next expected drift value by
@@ -901,6 +934,8 @@ static void cpts_tmr_poll(struct cpts *cpts, bool cpts_poll)
 	tmp64 = cpts_ts_read(cpts);
 	cpts_ts = tmp64;
 	cpts_ts_short = do_div(tmp64, 1000000000UL);
+
+	cpts_turn_on_off_1pps_output(cpts, cpts_ts_short);
 
 	if (((cpts_poll_mode) && (!cpts_poll)) ||  /* ignore cpsw toll */
 	    ((!cpts_poll_mode) && (cpts_poll))) {  /* ignore cpts poll */
