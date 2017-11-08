@@ -161,6 +161,7 @@ enum prueth_port_queue_id {
 	PRUETH_PORT_QUEUE_MAX,
 };
 
+#define NUM_RX_QUEUES	(NUM_QUEUES / 2)
 /* Each port queue has 4 queues and 1 collision queue */
 enum prueth_queue_id {
 	PRUETH_QUEUE1 = 0,
@@ -1050,8 +1051,6 @@ static const unsigned int emac_port_rx_priority_queue_ids[][2] = {
 	},
 };
 
-static const int emac_num_rx_queues = (NUM_QUEUES / 2);
-
 static int prueth_sw_hostconfig(struct prueth *prueth)
 {
 	void __iomem *dram1_base = prueth->mem[PRUETH_MEM_DRAM1].va;
@@ -1486,24 +1485,27 @@ static int prueth_emac_config(struct prueth *prueth, struct prueth_emac *emac)
 }
 
 /* Host rx PCP to priority Queue map,
- * byte 0 => PRU 0, PCP 0-3 => Q1 (could be any Queue)
- * byte 1 => PRU 0, PCP 4-7 => Q0 (could be any Queue)
- * byte 2 => Unused.
- * byte 3 => Unused.
- * byte 4 => PRU 1, PCP 0-3 => Q3 (could be any Queue)
- * byte 5 => PRU 1, PCP 4-7 => Q2 (could be any Queue)
- * byte 6 => Unused
- * byte 7 => Unused
- * queue names below are named 1 based. i.e PRUETH_QUEUE1 is 0,
- * PRUETH_QUEUE2 is 1 and so forth. Current assumption in
+ * byte 0 => PRU 1, PCP 0-1 => Q3
+ * byte 1 => PRU 1, PCP 2-3 => Q3
+ * byte 2 => PRU 1, PCP 4-5 => Q2
+ * byte 3 => PRU 1, PCP 6-7 => Q2
+ * byte 4 => PRU 0, PCP 0-1 => Q1
+ * byte 5 => PRU 0, PCP 2-3 => Q1
+ * byte 6 => PRU 0, PCP 4-5 => Q0
+ * byte 7 => PRU 0, PCP 6-7 => Q0
+ *
+ * queue names below are named 1 based. i.e PRUETH_QUEUE1 is Q0,
+ * PRUETH_QUEUE2 is Q1 and so forth. Current assumption in
  * the driver code is that lower the queue number higher the
  * priority of the queue.
  */
 u8 sw_pcp_rx_priority_queue_map[PCP_GROUP_TO_QUEUE_MAP_SIZE] = {
-	/* port 1 or PRU 0 */
-	PRUETH_QUEUE2, PRUETH_QUEUE1, 0xff, 0xff,
 	/* port 2 or PRU 1 */
-	PRUETH_QUEUE4, PRUETH_QUEUE3, 0xff, 0xff,
+	PRUETH_QUEUE4, PRUETH_QUEUE4,
+	PRUETH_QUEUE3, PRUETH_QUEUE3,
+	/* port 1 or PRU 0 */
+	PRUETH_QUEUE2, PRUETH_QUEUE2,
+	PRUETH_QUEUE1, PRUETH_QUEUE1,
 };
 
 static int prueth_hsr_prp_pcp_rxq_map_config(struct prueth *prueth)
@@ -2166,7 +2168,7 @@ static irqreturn_t emac_rx_thread(int irq, void *dev_id)
 	prueth = emac->prueth;
 
 	prio_q_ids = emac_port_rx_priority_queue_ids[emac->port_id];
-	q_cnt = emac_num_rx_queues;
+	q_cnt = NUM_RX_QUEUES;
 
 	/* search host queues for packets */
 	for (j = 0; j < q_cnt; j++) {
