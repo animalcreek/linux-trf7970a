@@ -32,6 +32,7 @@
 #include <linux/skbuff.h>
 #include <linux/ptp_classify.h>
 #include <linux/timecounter.h>
+#include <linux/kthread.h>
 #include <../arch/arm/plat-omap/include/plat/dmtimer.h>
 
 struct cpsw_cpts {
@@ -140,17 +141,20 @@ struct cpts {
 	u32 caps;
 	struct sk_buff_head txq;
 
+	int pps_enable;
+	int pps_state;
 	struct omap_dm_timer *odt;/* timer for 1PPS generator */
 	u32 count_prev;
 	u64 hw_timestamp;
-	u64 timstamp_prev;
-	bool count_updated;
 
 	struct pinctrl *pins;
 	struct pinctrl_state *pin_state_pwm_off;
 	struct pinctrl_state *pin_state_pwm_on;
 
 	int pps_tmr_irqn;
+
+	struct kthread_worker *pps_kworker;
+	struct kthread_delayed_work pps_work;
 };
 
 int cpts_rx_timestamp(struct cpts *cpts, struct sk_buff *skb);
