@@ -233,8 +233,14 @@ struct prueth_emac {
 	u32 tx_collisions;
 	u32 tx_collision_drops;
 	u32 rx_overflows;
+	u32 tx_packet_counts[NUM_QUEUES];
+	u32 rx_packet_counts[NUM_RX_QUEUES];
 
 	spinlock_t lock;	/* serialize access */
+#ifdef	CONFIG_DEBUG_FS
+	struct dentry *root_dir;
+	struct dentry *stats_file;
+#endif
 };
 
 struct prueth_mmap_port_cfg_basis {
@@ -394,6 +400,94 @@ void prueth_set_reg(struct prueth *prueth, enum prueth_mem region,
 }
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
+/* prueth_queue_stats_show - Formats and print prueth queue stats
+ */
+static int
+prueth_queue_stats_show(struct seq_file *sfp, void *data)
+{
+	struct prueth_emac *emac = (struct prueth_emac *)sfp->private;
+
+	seq_printf(sfp,
+		   "   TxQ-0    TxQ-1    TxQ-2    TxQ-3    ");
+	if (emac->port_id == PRUETH_PORT_MII0)
+		seq_printf(sfp,
+			   "RxQ-0    RxQ-1\n");
+	else
+		seq_printf(sfp,
+			   "RxQ-2    RxQ-3\n");
+	seq_printf(sfp,
+		   "=====================================================\n");
+
+	seq_printf(sfp, "%8d %8d %8d %8d %8d %8d\n",
+		   emac->tx_packet_counts[PRUETH_QUEUE1],
+		   emac->tx_packet_counts[PRUETH_QUEUE2],
+		   emac->tx_packet_counts[PRUETH_QUEUE3],
+		   emac->tx_packet_counts[PRUETH_QUEUE4],
+		   emac->rx_packet_counts[PRUETH_QUEUE1],
+		   emac->rx_packet_counts[PRUETH_QUEUE2]);
+
+	return 0;
+}
+
+/* prueth_queue_stats_fops - Open the prueth queue stats file
+ *
+ * Description:
+ * This routine opens a debugfs file for prueth queue stats
+ */
+static int
+prueth_queue_stats_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, prueth_queue_stats_show,
+			   inode->i_private);
+}
+
+static const struct file_operations prueth_emac_stats_fops = {
+	.owner	= THIS_MODULE,
+	.open	= prueth_queue_stats_open,
+	.read	= seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+/* prueth_debugfs_init - create  debugfs file for displaying queue stats
+ *
+ * Description:
+ * When debugfs is configured this routine dump the rx_packet_counts and
+ * tx_packet_counts in the emac structures
+ */
+
+static int prueth_debugfs_init(struct prueth_emac *emac)
+{
+	int rc = -1;
+	struct dentry *de;
+	char name[32];
+
+	memset(name, 0, sizeof(name));
+	sprintf(name, "prueth-");
+	strncat(name, emac->ndev->name, sizeof(name) - 1);
+	de = debugfs_create_dir(name, NULL);
+
+	if (!de) {
+		netdev_err(emac->ndev,
+			   "Cannot create debugfs dir name %s\n",
+			   name);
+		return rc;
+	}
+
+	emac->root_dir = de;
+	de = debugfs_create_file("stats", S_IFREG | 0444,
+				 emac->root_dir, emac,
+				 &prueth_emac_stats_fops);
+	if (!de) {
+		netdev_err(emac->ndev, "Cannot create emac stats file\n");
+		return rc;
+	}
+
+	emac->stats_file = de;
+
+	return 0;
+}
+
 static void prueth_hsr_prp_node_show(struct seq_file *sfp,
 				     struct prueth *prueth, u8 index)
 {
@@ -969,6 +1063,21 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 	return 0;
 }
 
+/* prueth_debugfs_term - Tear down debugfs intrastructure for emac stats
+ *
+ * Description:
+ * When Debufs is configured this routine removes debugfs file system
+ * elements that are specific to prueth queue stats
+ */
+void
+prueth_debugfs_term(struct prueth_emac *emac)
+{
+	debugfs_remove(emac->stats_file);
+	emac->stats_file = NULL;
+	debugfs_remove(emac->root_dir);
+	emac->root_dir = NULL;
+}
+
 /* prueth_hsr_prp_debugfs_term - Tear down debugfs intrastructure
  *
  * Description:
@@ -1013,6 +1122,14 @@ static inline int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 }
 
 static inline void prueth_hsr_prp_debugfs_term(struct prueth *prueth)
+{}
+
+static inline int prueth_debugfs_init(struct prueth_emac *emac)
+{
+	return 0;
+}
+
+static inline void prueth_debugfs_term(struct prueth_emac *emac)
 {}
 #endif
 
@@ -2233,6 +2350,7 @@ static irqreturn_t emac_rx_thread(int irq, void *dev_id)
 						     pkt_info, rxqueue);
 				if (ret)
 					return IRQ_HANDLED;
+				emac->rx_packet_counts[i & 1]++;
 			}
 
 			/* after reading the buffer descriptor we clear it
@@ -3135,6 +3253,10 @@ static int emac_ndo_open(struct net_device *ndev)
 		}
 	}
 
+	ret = prueth_debugfs_init(emac);
+	if (ret)
+		goto clean_debugfs_hsr_prp;
+
 	/* reset and start PRU firmware */
 	if (PRUETH_HAS_SWITCH(prueth))
 		prueth_sw_emac_config(prueth, emac);
@@ -3175,6 +3297,8 @@ static int emac_ndo_open(struct net_device *ndev)
 	return 0;
 
 clean_debugfs:
+	prueth_debugfs_term(emac);
+clean_debugfs_hsr_prp:
 	if (PRUETH_HAS_RED(prueth))
 		prueth_hsr_prp_debugfs_term(prueth);
 free_irq:
@@ -3261,6 +3385,8 @@ static int emac_ndo_stop(struct net_device *ndev)
 	/* disable the mac port */
 	prueth_port_enable(emac->prueth, emac->port_id, 0);
 
+	prueth_debugfs_term(emac);
+
 	mutex_lock(&prueth->mlock);
 	/* stop PRU firmware */
 	if (PRUETH_HAS_SWITCH(emac->prueth))
@@ -3337,6 +3463,7 @@ static int emac_ndo_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 		}
 	}
 
+	emac->tx_packet_counts[qid]++;
 	ndev->stats.tx_packets++;
 	ndev->stats.tx_bytes += skb->len;
 	dev_kfree_skb_any(skb);
