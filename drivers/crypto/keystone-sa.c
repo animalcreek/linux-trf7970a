@@ -347,7 +347,8 @@ static int sa_setup_resources(struct keystone_crypto_data *dev_data)
 
 	snprintf(name, sizeof(name), "tx-subm-q-%s", dev_name(dev));
 	dev_data->tx_submit_q = knav_queue_open(name,
-						dev_data->tx_submit_qid, 0);
+						dev_data->tx_submit_qid,
+						KNAV_QUEUE_SHARED);
 	if (IS_ERR(dev_data->tx_submit_q)) {
 		ret = PTR_ERR(dev_data->tx_submit_q);
 		dev_err(dev, "Could not open \"%s\": %d\n", name, ret);
