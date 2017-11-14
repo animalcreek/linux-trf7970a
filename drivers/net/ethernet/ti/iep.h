@@ -25,19 +25,25 @@
 #include <linux/skbuff.h>
 #include <linux/timecounter.h>
 
-#define IEP_SYNC_EN                  0x1
-#define IEP_SYNC0_EN                 0x2
-#define IEP_CMP1_EN                  0x4
+#define IEP_SYNC_EN                  BIT(0)
+#define IEP_SYNC0_EN                 BIT(1)
+#define IEP_CMP1_EN                  BIT(2)
+#define IEP_CMP1_HIT                 BIT(1)
 
+/* IEP reg offsets */
 #define PRUSS_IEP_GLOBAL_CFG         0x00
 #define PRUSS_IEP_COMPENSATION       0x08
 #define PRUSS_IEP_SLOW_COMPENSATION  0x0C
 #define PRUSS_IEP_COUNT_REG0         0x10
 #define PRUSS_IEP_COUNT_REG1         0x14
 #define PRUSS_IEP_CMP_CFG_REG        0x70
+#define PRUSS_IEP_CMP_STAT_REG       0x74
 #define PRUSS_IEP_CMP1_REG0          0x80
+#define PRUSS_IEP_CMP1_REG1          0x84
 #define PRUSS_IEP_SYNC_CTRL_REG      0x180
+#define PRUSS_IEP_SYNC0_STAT_REG     0x188
 #define PRUSS_IEP_SYNC_PWIDTH_REG    0x190
+#define PRUSS_IEP_SYNC0_PERIOD_REG   0x194
 #define PRUSS_IEP_SYNC_START_REG     0x19c
 
 #define PRUSS_IEP_CMP_INC_MASK       0xfff00
@@ -50,13 +56,25 @@
 #define IEP_TC_DEFAULT_SHIFT         28
 #define IEP_TC_DEFAULT_MULT          (5 << IEP_TC_DEFAULT_SHIFT)
 
-#define IEP_GLOBAL_CFG_REG_MASK	0xfffff
-#define IEP_GLOBAL_CFG_REG_VAL	0x00111
+#define IEP_GLOBAL_CFG_REG_MASK      0xfffff
+#define IEP_GLOBAL_CFG_REG_VAL       0x00111
+
+/* 10 ms width */
+#define IEP_DEFAULT_PPS_WIDTH        (PRUSS_IEP_CLOCK_RATE / 100)
+
+#define CTRL_CORE_PAD_VOUT1_D7       0x4a0035f8
+
+/* 1ms pulse sync interval */
+#define PULSE_SYNC_INTERVAL          1000000
+#define TIMESYNC_SECONDS_COUNT_SIZE  6
+#define PTP_TWO_STEP_ENABLE          1
+#define TIMESYNC_ENABLE              1
 
 struct iep {
 	struct device *dev;
 	void __iomem *sram;
 	void __iomem *iep_reg;
+	u32 __iomem  *pr2_sync0_mux;
 	struct ptp_clock_info info;
 	struct ptp_clock *ptp_clock;
 	int phc_index;
@@ -66,9 +84,15 @@ struct iep {
 	u32 cc_mult; /* for the nominal frequency */
 	struct cyclecounter cc;
 	struct timecounter tc;
-	struct delayed_work overflow_work;
 	unsigned long ov_check_period;
 	unsigned long ov_check_period_slow;
+	u64 cmp1_last;
+	int pps_enable;
+	int pps_report_next_op;
+	enum {
+		DISABLE_SYNC0,
+		ENABLE_SYNC0,
+	} pps_ops[4];
 };
 
 void iep_reset_timestamp(struct iep *iep, u16 ts_ofs);
