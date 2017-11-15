@@ -849,8 +849,8 @@ static int cpts_of_parse(struct cpts *cpts, struct device_node *node)
 
 	/* get timer for 1PPS */
 	ret = cpts_of_1pps_parse(cpts, node);
-	if (ret)
-		goto of_error;
+	cpts->use_1pps = (ret == 0);
+
 	return 0;
 
 of_error:
@@ -911,12 +911,14 @@ struct cpts *cpts_create(struct device *dev, void __iomem *regs,
 		}
 	}
 
-	ret = cpts_pps_init(cpts);
+	if (cpts->use_1pps) {
+		ret = cpts_pps_init(cpts);
 
-	if (ret < 0) {
-		dev_err(dev, "unable to init PPS resource (%d)\n",
+		if (ret < 0) {
+			dev_err(dev, "unable to init PPS resource (%d)\n",
 				ret);
-		return ERR_PTR(ret);
+			return ERR_PTR(ret);
+		}
 	}
 
 	return cpts;
