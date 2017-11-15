@@ -284,3 +284,25 @@
 		spi-max-frequency = <76800000>;
 	};
 };
+
+&mac {
+	/* cptr pps1 generator properties */
+	timers = <&timer16>;
+	pinctrl-names = "pwm_off", "pwm_on";
+	pinctrl-0 = <&pps1_timer16_pwm_off>;
+	pinctrl-1 = <&pps1_timer16_pwm_on>;
+};
+
+&dra7_pmx_core {
+	pps1_timer16_pwm_on: pps1_timer16_pwm_on {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x36a0, PIN_OUTPUT | MUX_MODE10)
+		>;
+	};
+
+	pps1_timer16_pwm_off: pps1_timer16_pwm_off {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x36a0, PIN_OUTPUT | MUX_MODE15)
+		>;
+	};
+};
