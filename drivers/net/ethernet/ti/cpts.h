@@ -141,6 +141,7 @@ struct cpts {
 	u32 caps;
 	struct sk_buff_head txq;
 
+	bool use_1pps;
 	int pps_enable;
 	int pps_state;
 	struct omap_dm_timer *odt;/* timer for 1PPS generator */
