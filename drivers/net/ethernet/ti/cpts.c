@@ -426,7 +426,9 @@ static int cpts_pps_init(struct cpts *cpts)
 
 	cpts->pps_enable = -1;
 
+#ifdef CONFIG_OMAP_DM_TIMER
 	omap_dm_timer_enable(cpts->odt);
+#endif
 	cpts_tmr_init(cpts);
 
 	kthread_init_delayed_work(&cpts->pps_work, cpts_pps_kworker);
@@ -788,8 +790,9 @@ static int cpts_of_1pps_parse(struct cpts *cpts, struct device_node *node)
 		dev_err(cpts->dev, "cannot get 1pps timer interrupt number\n");
 	}
 
+#ifdef CONFIG_OMAP_DM_TIMER
 	cpts->odt = omap_dm_timer_request_by_node(np);
-
+#endif
 	if (IS_ERR(cpts->odt)) {
 		dev_err(cpts->dev, "request for 1pps timer failed: %ld\n",
 			PTR_ERR(cpts->odt));
@@ -930,13 +933,14 @@ void cpts_release(struct cpts *cpts)
 	if (!cpts)
 		return;
 
+#ifdef CONFIG_OMAP_DM_TIMER
 	if (cpts->odt) {
 		omap_dm_timer_disable(cpts->odt);
 		omap_dm_timer_free(cpts->odt);
 
 		devm_pinctrl_put(cpts->pins);
 	}
-
+#endif
 	if (cpts->pps_kworker) {
 		kthread_cancel_delayed_work_sync(&cpts->pps_work);
 		kthread_destroy_worker(cpts->pps_kworker);
