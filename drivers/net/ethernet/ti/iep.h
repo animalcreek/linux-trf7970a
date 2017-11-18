@@ -82,16 +82,6 @@
 /* 10 ms width */
 #define IEP_DEFAULT_PPS_WIDTH        (PRUSS_IEP_CLOCK_RATE / 100)
 
-/* VOUT1_D5_MUXMODE   0xA: pr2_edc_latch0_in   trm p4725
- * VOUT1_D6_MUXMODE   0xA: pr2_edc_latch1_in   trm p4726
- * VOUT1_D7_MUXMODE   0xA: pr2_edc_sync0_out   trm p4727
- * VOUT1_D8_MUXMODE   0xA: pr2_edc_sync1_out   trm p4728
- */
-#define CTRL_CORE_PAD_VOUT1_D5       0x4a0035f0
-#define CTRL_CORE_PAD_VOUT1_D6       0x4a0035f4
-#define CTRL_CORE_PAD_VOUT1_D7       0x4a0035f8
-#define CTRL_CORE_PAD_VOUT1_D8       0x4a0035fc
-
 /* 1ms pulse sync interval */
 #define PULSE_SYNC_INTERVAL          1000000
 #define TIMESYNC_SECONDS_COUNT_SIZE  6
@@ -101,8 +91,11 @@
 #define IEP_PPS_EXTERNAL             1
 #define IEP_PPS_INTERNAL             0
 #define MAX_PPS                      2
+#define MAX_EXTTS                    2
 
 struct pps {
+	struct pinctrl_state *pin_on;
+	struct pinctrl_state *pin_off;
 	int enable;
 	int next_op;
 	enum {
@@ -111,14 +104,15 @@ struct pps {
 	} report_ops[4];
 };
 
+struct extts {
+	struct pinctrl_state *pin_on;
+	struct pinctrl_state *pin_off;
+};
+
 struct iep {
 	struct device *dev;
 	void __iomem *sram;
 	void __iomem *iep_reg;
-	u32 __iomem  *pr2_sync0_mux;
-	u32 __iomem  *pr2_sync1_mux;
-	u32 __iomem  *pr2_latch0_mux;
-	u32 __iomem  *pr2_latch1_mux;
 	struct ptp_clock_info info;
 	struct ptp_clock *ptp_clock;
 	int phc_index;
@@ -132,6 +126,11 @@ struct iep {
 	unsigned long ov_check_period_slow;
 	struct pps pps[MAX_PPS];
 	u32 latch_enable;
+
+	int bc_clkid;
+	bool bc_pps_sync;
+	struct pinctrl *pins;
+	struct extts extts[MAX_EXTTS];
 };
 
 void iep_reset_timestamp(struct iep *iep, u16 ts_ofs);

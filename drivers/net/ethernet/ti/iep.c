@@ -295,6 +295,16 @@ static int iep_settime(struct ptp_clock_info *ptp, const struct timespec64 *ts)
 }
 
 /* PPS */
+static void iep_pps_pins_off(struct iep *iep)
+{
+	int i;
+
+	for (i = 0; i < MAX_PPS; i++) {
+		if (iep->pps[i].pin_off)
+			pinctrl_select_state(iep->pins, iep->pps[i].pin_off);
+	}
+}
+
 /* Stop pps:
  *   disable sync
  *   disable cmp
@@ -380,58 +390,12 @@ static int iep_pps_enable(struct iep *iep, unsigned int pps, int on)
 	if (cmp_val <= cyc_last2 + 10)
 		cmp_val += cyc_per_sec;
 
+	pinctrl_select_state(iep->pins, iep->pps[pps].pin_on);
 	iep_set_cmp(iep, PPS_CMP(pps), cmp_val);
 	iep_pps_start(iep, pps);
 
 	spin_unlock_irqrestore(&iep->ptp_lock, flags);
 	return 0;
-}
-
-static void iep_sync_latch_pad_config(struct iep *iep)
-{
-	u32 v;
-
-	iep->pr2_sync0_mux = (u32 __iomem *)ioremap(CTRL_CORE_PAD_VOUT1_D7,
-						    sizeof(u32));
-	iep->pr2_sync1_mux = (u32 __iomem *)ioremap(CTRL_CORE_PAD_VOUT1_D8,
-						    sizeof(u32));
-	iep->pr2_latch0_mux = (u32 __iomem *)ioremap(CTRL_CORE_PAD_VOUT1_D5,
-						    sizeof(u32));
-
-	iep->pr2_latch1_mux = (u32 __iomem *)ioremap(CTRL_CORE_PAD_VOUT1_D6,
-						    sizeof(u32));
-
-	/* mux CTRL_CORE_PAD_VOUT1_D7(0x4A00_35F8) (TRM p4727)
-	 *	VOUT1_D7_MUXMODE[0:3] = 0xA: pr2_edc_sync0_out
-	 *		Expansion Connector:17 (schematic p33)
-	 */
-	v = readl_relaxed(iep->pr2_sync0_mux);
-	v = (v & ~0xf) | 0xa;
-	writel_relaxed(v, iep->pr2_sync0_mux);
-
-	/* mux CTRL_CORE_PAD_VOUT1_D8(0x4A00_35FC) (TRM p4728)
-	 *	VOUT1_D8_MUXMODE[0:3] = 0xA: pr2_edc_sync1_out
-	 *		Expansion Connector:19 (schematic p33)
-	 */
-	v = readl_relaxed(iep->pr2_sync1_mux);
-	v = (v & ~0xf) | 0xa;
-	writel_relaxed(v, iep->pr2_sync1_mux);
-
-	/* mux CTRL_CORE_PAD_VOUT1_D5(0x4A00_35F0) (TRM p4724)
-	 *	VOUT1_D5_MUXMODE[0:3] = 0xA: pr2_edc_latch0_in
-	 *		Expansion Connector:13 (schematic p33)
-	 */
-	v = readl_relaxed(iep->pr2_latch0_mux);
-	v = (v & ~0xf) | 0xa;
-	writel_relaxed(v, iep->pr2_latch0_mux);
-
-	/* mux CTRL_CORE_PAD_VOUT1_D6(0x4A00_35F4) (TRM p4726)
-	 *	VOUT1_D6_MUXMODE[0:3] = 0xA: pr2_edc_latch1_in
-	 *		Expansion Connector:15 (schematic p33)
-	 */
-	v = readl_relaxed(iep->pr2_latch1_mux);
-	v = (v & ~0xf) | 0xa;
-	writel_relaxed(v, iep->pr2_latch1_mux);
 }
 
 /* One time configs
@@ -465,8 +429,6 @@ static int iep_pps_init(struct iep *iep)
 	 */
 	iep_write_reg(iep, PRUSS_IEP_SYNC1_DELAY_REG, 0);
 
-	iep_sync_latch_pad_config(iep);
-
 	for (i = 0; i < MAX_PPS; i++) {
 		iep->pps[i].enable = -1;
 		iep->pps[i].next_op = -1;
@@ -476,6 +438,16 @@ static int iep_pps_init(struct iep *iep)
 }
 
 /* EXTTS */
+static void iep_extts_pins_off(struct iep *iep)
+{
+	int i;
+
+	for (i = 0; i < MAX_EXTTS; i++) {
+		if (iep->extts[i].pin_off)
+			pinctrl_select_state(iep->pins, iep->extts[i].pin_off);
+	}
+}
+
 static int iep_extts_enable(struct iep *iep, u32 index, int on)
 {
 	unsigned long flags;
@@ -489,9 +461,11 @@ static int iep_extts_enable(struct iep *iep, u32 index, int on)
 	spin_lock_irqsave(&iep->ptp_lock, flags);
 
 	if (on) {
+		pinctrl_select_state(iep->pins, iep->extts[index].pin_on);
 		iep_enable_latch(iep, index);
 		iep->latch_enable |= BIT(index);
 	} else {
+		pinctrl_select_state(iep->pins, iep->extts[index].pin_off);
 		iep_disable_latch(iep, index);
 		iep->latch_enable &= ~BIT(index);
 	}
@@ -622,6 +596,7 @@ static int iep_proc_pps(struct iep *iep, int pps)
 	if (!p->enable) {
 		/* pps stop was initiated */
 		iep_pps_stop(iep, pps);
+		pinctrl_select_state(iep->pins, p->pin_off);
 		p->enable = -1;
 		return 0;
 	}
@@ -834,6 +809,12 @@ static int iep_config(struct iep *iep)
 {
 	int i;
 
+	if (iep->info.pps)
+		iep_pps_pins_off(iep);
+
+	if (iep->info.n_ext_ts)
+		iep_extts_pins_off(iep);
+
 	/* This is just to be extra cautious to avoid HW damage because
 	 * of more than one output signal going against each other in our
 	 * application. The unregister call stops the pps also. This extra
@@ -913,9 +894,77 @@ void iep_unregister(struct iep *iep)
 	for (i = 0; i < MAX_PPS; i++)
 		iep_pps_stop(iep, i);
 
+	devm_pinctrl_put(iep->pins);
 	iep_time_sync_stop(iep);
 	ptp_clock_unregister(iep->ptp_clock);
 	iep->ptp_clock = NULL;
+}
+
+/* Get the pps (sync) and extts (latch) on/off pinctrl
+ * states. on-state will be selected when pps or extts
+ * pin is enabled. off-state selected when pin is disabled.
+ */
+static int iep_get_pps_extts_pins(struct iep *iep)
+{
+	struct pinctrl_state *on, *off;
+	u32 has_on_off;
+
+	iep->pins = devm_pinctrl_get(iep->dev);
+	if (IS_ERR(iep->pins)) {
+		dev_err(iep->dev, "request for sync latch pins failed: %ld\n",
+			PTR_ERR(iep->pins));
+		return PTR_ERR(iep->pins);
+	}
+
+	has_on_off = 0;
+
+	on = pinctrl_lookup_state(iep->pins, "sync0_on");
+	if (!IS_ERR(on))
+		has_on_off |= BIT(1);
+
+	off = pinctrl_lookup_state(iep->pins, "sync0_off");
+	if (!IS_ERR(off))
+		has_on_off |= BIT(0);
+
+	if (has_on_off == 0x3) {
+		iep->pps[0].pin_on = on;
+		iep->pps[0].pin_off = off;
+		iep->info.pps = 1;
+	}
+
+	has_on_off = 0;
+
+	on = pinctrl_lookup_state(iep->pins, "latch0_on");
+	if (!IS_ERR(on))
+		has_on_off |= BIT(1);
+
+	off = pinctrl_lookup_state(iep->pins, "latch0_off");
+	if (!IS_ERR(off))
+		has_on_off |= BIT(0);
+
+	if (has_on_off == 0x3) {
+		iep->extts[0].pin_on = on;
+		iep->extts[0].pin_off = off;
+		iep->info.n_ext_ts = 1;
+	}
+
+	has_on_off = 0;
+
+	on = pinctrl_lookup_state(iep->pins, "sync1_on");
+	if (!IS_ERR(on))
+		has_on_off |= BIT(1);
+
+	off = pinctrl_lookup_state(iep->pins, "sync1_off");
+	if (!IS_ERR(off))
+		has_on_off |= BIT(0);
+
+	if (has_on_off == 0x3) {
+		iep->pps[1].pin_on = on;
+		iep->pps[1].pin_off = off;
+		iep->info.n_per_out = 1;
+	}
+
+	return 0;
 }
 
 struct iep *iep_create(struct device *dev, void __iomem *sram,
@@ -939,6 +988,12 @@ struct iep *iep_create(struct device *dev, void __iomem *sram,
 	iep->cc.read = iep_cc_read;
 	iep->cc.mask = CLOCKSOURCE_MASK(64);
 	iep->info = iep_info;
+
+	iep_get_pps_extts_pins(iep);
+	if (iep->info.pps && iep->info.n_ext_ts)
+		iep->bc_pps_sync = true;
+	else
+		iep->bc_pps_sync = false;
 
 	/* save cc.mult original value as it can be modified
 	 * by iep_adjfreq().
