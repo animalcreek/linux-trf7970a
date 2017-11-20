@@ -144,6 +144,64 @@ static const struct file_operations hsr_prp_stats_fops = {
 	.release = single_release,
 };
 
+/* dd_mode_show - print the value of duplicate_discard debugfs file
+ * for prp device
+ */
+static int
+dd_mode_show(struct seq_file *sfp, void *data)
+{
+	struct hsr_prp_priv *priv = (struct hsr_prp_priv *)sfp->private;
+
+	seq_printf(sfp, "%u\n", priv->dup_discard_mode);
+
+	return 0;
+}
+
+/* dd_mode_write - write the user provided value to duplicate_discard debugfs
+ * file
+ */
+static ssize_t
+dd_mode_write(struct file *file, const char __user *user_buf,
+	      size_t count, loff_t *ppos)
+{
+	struct hsr_prp_priv *priv =
+		((struct seq_file *)(file->private_data))->private;
+	unsigned long mode;
+	int err;
+
+	err = kstrtoul_from_user(user_buf, count, 0, &mode);
+	if (err)
+		return err;
+
+	if (priv->dup_discard_mode < IEC62439_3_PRP_DA ||
+	    priv->dup_discard_mode > IEC62439_3_PRP_DD)
+		return -EINVAL;
+
+	priv->dup_discard_mode = mode;
+
+	return count;
+}
+
+/* dd_mode_open - Open the duplicate discard mode debugfs file
+ *
+ * Description:
+ * This routine opens a debugfs file duplicate_discard for prp device
+ */
+static int
+dd_mode_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, dd_mode_show, inode->i_private);
+}
+
+static const struct file_operations dd_mode_fops = {
+	.owner	= THIS_MODULE,
+	.open	= dd_mode_open,
+	.read	= seq_read,
+	.write	= dd_mode_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
 /* hsr_mode_show - print the value of hsr_mode debugfs file
  * for hsr device
  */
@@ -179,12 +237,15 @@ hsr_mode_write(struct file *file, const char __user *user_buf,
 	if (!(priv->rx_offloaded && priv->l2_fwd_offloaded))
 		return -EPERM;
 
+	if (mode < IEC62439_3_HSR_MODE_H || mode > IEC62439_3_HSR_MODE_M)
+		return -EINVAL;
+
 	priv->hsr_mode = mode;
 
 	return count;
 }
 
-/* hsr_mode_open - Open the prueth_hsr_mode_open debugfs file
+/* hsr_mode_open - Open the hsr_mode debugfs file
  *
  * Description:
  * This routine opens a debugfs file hsr_mode for hsr device
@@ -264,6 +325,18 @@ int hsr_prp_debugfs_init(struct hsr_prp_priv *priv,
 		priv->hsr_mode_file = de;
 	}
 
+	if (priv->prot_version == PRP_V1) {
+		de = debugfs_create_file("duplicate_discard", 0444,
+					 priv->root_dir, priv,
+					 &dd_mode_fops);
+		if (!de) {
+			netdev_err(hsr_prp_dev,
+				   "Can't create duplcate_discard mode file\n");
+			return rc;
+		}
+		priv->dd_mode_file = de;
+	}
+
 	return 0;
 } /* end of hst_prp_debugfs_init */
 
@@ -283,6 +356,9 @@ hsr_prp_debugfs_term(struct hsr_prp_priv *priv)
 	if (priv->prot_version == HSR_V1)
 		debugfs_remove(priv->hsr_mode_file);
 	priv->hsr_mode_file = NULL;
+	if (priv->prot_version == PRP_V1)
+		debugfs_remove(priv->dd_mode_file);
+	priv->dd_mode_file = NULL;
 	debugfs_remove(priv->root_dir);
 	priv->root_dir = NULL;
 }

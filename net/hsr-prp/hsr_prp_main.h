@@ -212,6 +212,10 @@ struct hsr_prp_port {
 #define HSR	0
 #define PRP	1
 
+/* PRP duplicate discard modes */
+#define IEC62439_3_PRP_DA	1
+#define IEC62439_3_PRP_DD	2
+
 #define IEC62439_3_HSR_MODE_H	1
 #define IEC62439_3_HSR_MODE_N	2
 #define IEC62439_3_HSR_MODE_T	3
@@ -242,6 +246,7 @@ struct hsr_prp_priv {
 				 * of lan_id
 				 */
 	u8 hsr_mode;		/* value of hsr mode */
+	u8 dup_discard_mode;		/* Duplicate Discard mode for PRP */
 	spinlock_t seqnr_lock;	/* locking for sequence_nr */
 	unsigned char		sup_multicast_addr[ETH_ALEN];
 #ifdef	CONFIG_DEBUG_FS
@@ -249,6 +254,7 @@ struct hsr_prp_priv {
 	struct dentry *node_tbl_file;
 	struct dentry *stats_file;
 	struct dentry *hsr_mode_file;
+	struct dentry *dd_mode_file;
 #endif
 };
 
