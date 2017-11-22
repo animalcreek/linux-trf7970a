@@ -56,9 +56,13 @@ struct cpts_skb_cb_data {
 #define WRITE_TSICR(val) __omap_dm_timer_write(cpts->odt, \
 				OMAP_TIMER_IF_CTRL_REG, (val), 0)
 
-#define CPTS_TS_THRESH     98000000ULL
-#define CPTS_TMR_CMP_CNT    (CPTS_TMR_RELOAD_CNT + 200000)
-#define CPTS_TMR_RELOAD_CNT (0xFFFFFFFFUL - 100000000 / 50 + 1)
+#define CPTS_TS_THRESH		98000000ULL
+#define CPTS_TMR_CLK_RATE	100000000
+#define CPTS_TMR_CLK_PERIOD	(1000000000/CPTS_TMR_CLK_RATE)
+#define CPTS_TMR_RELOAD_CNT	(0xFFFFFFFFUL - 100000000UL/CPTS_TMR_CLK_PERIOD + 1)
+#define CPTS_TMR_CMP_CNT	(CPTS_TMR_RELOAD_CNT + 10000000UL/CPTS_TMR_CLK_PERIOD)
+#define CPTS_MAX_MMR_ACCESS_TIME	1000
+#define CPTS_NOM_MMR_ACCESS_TIME	450
 
 static u32 tmr_reload_cnt = CPTS_TMR_RELOAD_CNT;
 static u32 tmr_reload_cnt_prev = CPTS_TMR_RELOAD_CNT;
@@ -269,8 +273,8 @@ static int cpts_ptp_adjfreq(struct ptp_clock_info *ptp, s32 ppb)
 
 	spin_unlock_irqrestore(&cpts->lock, flags);
 
-	tmr_reload_cnt = neg_adj ? CPTS_TMR_RELOAD_CNT - (ppb + 0) / 500 :
-		CPTS_TMR_RELOAD_CNT + (ppb + 0) / 500;
+	tmr_reload_cnt = neg_adj ? CPTS_TMR_RELOAD_CNT - (ppb + 0) / (CPTS_TMR_CLK_PERIOD*10) :
+		CPTS_TMR_RELOAD_CNT + (ppb + 0) / (CPTS_TMR_CLK_PERIOD*10);
 
 	return 0;
 }
@@ -1051,9 +1055,9 @@ static void inline cpts_turn_on_off_1pps_output(struct cpts *cpts, u64 ts)
 static void update_ts_correct(void)
 {
 	if (tmr_reload_cnt > tmr_reload_cnt_prev)
-		ts_correct -= (tmr_reload_cnt - tmr_reload_cnt_prev) * 50;
+		ts_correct -= (tmr_reload_cnt - tmr_reload_cnt_prev) * CPTS_TMR_CLK_PERIOD;
 	else
-		ts_correct += (tmr_reload_cnt_prev - tmr_reload_cnt) * 50;
+		ts_correct += (tmr_reload_cnt_prev - tmr_reload_cnt) * CPTS_TMR_CLK_PERIOD;
 }
 
 static void cpts_tmr_poll(struct cpts *cpts, bool cpts_poll)
@@ -1089,7 +1093,7 @@ static void cpts_tmr_poll(struct cpts *cpts, bool cpts_poll)
 	switch (cpts->pps_state) {
 	case INIT:
 		if ((cpts_ts_short < CPTS_TS_THRESH) &&
-		    ((tmr_count2 - tmr_count) < 20)) {
+			((tmr_count2 - tmr_count) < CPTS_MAX_MMR_ACCESS_TIME/CPTS_TMR_CLK_PERIOD)) {
 			/* The nominal delay of this operation about 9 ticks
 			 * We are able to compensate for the normal range 8-17
 			 * However, the simple compensation fials when the delay
@@ -1098,11 +1102,11 @@ static void cpts_tmr_poll(struct cpts *cpts, bool cpts_poll)
 			 * Calculate the expected tcrr value and update to it
 			 */
 			tmp64 = (100000000UL - cpts_ts_short);
-			do_div(tmp64, 50);
+				do_div(tmp64, CPTS_TMR_CLK_PERIOD);
 			count_exp = (u32)tmp64;
 			count_exp = 0xFFFFFFFFUL - count_exp + 1;
 
-			WRITE_TCRR(count_exp + READ_TCRR - tmr_count2 + 9);
+			WRITE_TCRR(count_exp + READ_TCRR - tmr_count2 + CPTS_NOM_MMR_ACCESS_TIME/CPTS_TMR_CLK_PERIOD);
 
 			{
 				WRITE_TLDR(tmr_reload_cnt);
@@ -1173,30 +1177,31 @@ static void cpts_tmr_poll(struct cpts *cpts, bool cpts_poll)
 				tsAdjust = ts_val +
 					(ts_val - ts_val_prev + ts_correct) * 2;
 
-			tmr_diff = (tsAdjust < 0) ? (tsAdjust - 25) / 50 :
-				(tsAdjust + 25) / 50;
+			tmr_diff = (tsAdjust < 0) ? (tsAdjust - CPTS_TMR_CLK_PERIOD/2) / CPTS_TMR_CLK_PERIOD :
+				(tsAdjust + CPTS_TMR_CLK_PERIOD/2) / CPTS_TMR_CLK_PERIOD;
 
-			/* adjust tmr_diff if the reload value change,
-			 * which affect only the second cycle
+			/* adjust for the error in the current cycle due to the old (incorrect) reload count
+			 * we only make the adjustment if the counter change is more than 1 because the
+			 * couner will change back and forth at the frequency tick boundary
 			 */
 			if (tmr_reload_cnt != tmr_reload_cnt_prev) {
 				if (tmr_reload_cnt > tmr_reload_cnt_prev)
-					tmr_diff -= (tmr_reload_cnt -
-						     tmr_reload_cnt_prev);
+					tmr_diff += (tmr_reload_cnt -
+						     tmr_reload_cnt_prev - 1);
 				else
-					tmr_diff += (tmr_reload_cnt_prev -
-						     tmr_reload_cnt);
+					tmr_diff -= (tmr_reload_cnt_prev -
+						     tmr_reload_cnt - 1);
 			}
 
 			pr_debug("cpts_tmr_poll: ts_val = %d, ts_val_prev = %d\n", ts_val, ts_val_prev);
 
-			ts_correct = tmr_diff * 50;
+			ts_correct = tmr_diff * CPTS_TMR_CLK_PERIOD;
 			ts_val_prev = ts_val;
 			tmr_diff_abs = abs(tmr_diff);
 
-			if (tmr_diff_abs) {
+			if (tmr_diff_abs || (tmr_reload_cnt != tmr_reload_cnt_prev)) {
 				updated = true;
-				if (tmr_diff_abs < (1000000 / 50)) {
+				if (tmr_diff_abs < (1000000 / CPTS_TMR_CLK_PERIOD)) {
 					/* adjust ldr time for one period
 					 * instead of updating the tcrr directly
 					 */
@@ -1210,10 +1215,6 @@ static void cpts_tmr_poll(struct cpts *cpts, bool cpts_poll)
 					break;
 				}
 			} else {
-				if (tmr_reload_cnt != tmr_reload_cnt_prev) {
-					WRITE_TLDR(tmr_reload_cnt);
-					update_ts_correct();
-				}
 				cpts->pps_state = WAIT;
 			}
 
