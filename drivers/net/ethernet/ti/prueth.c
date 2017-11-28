@@ -1277,9 +1277,8 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 void
 prueth_debugfs_term(struct prueth_emac *emac)
 {
-	debugfs_remove(emac->stats_file);
+	debugfs_remove_recursive(emac->root_dir);
 	emac->stats_file = NULL;
-	debugfs_remove(emac->root_dir);
 	emac->root_dir = NULL;
 }
 
@@ -1299,25 +1298,14 @@ prueth_hsr_prp_debugfs_term(struct prueth *prueth)
 	if (prueth->emac_configured)
 		return;
 
-	debugfs_remove(prueth->node_tbl_file);
+	debugfs_remove_recursive(prueth->root_dir);
 	prueth->node_tbl_file = NULL;
-	debugfs_remove(prueth->nt_clear_file);
 	prueth->nt_clear_file = NULL;
-	if (PRUETH_IS_HSR(prueth)) {
-		debugfs_remove(prueth->hsr_mode_file);
-		prueth->hsr_mode_file = NULL;
-	}
-	debugfs_remove(prueth->dlrmt_file);
+	prueth->hsr_mode_file = NULL;
 	prueth->dlrmt_file = NULL;
-	debugfs_remove(prueth->dd_file);
 	prueth->dd_file = NULL;
-	if (PRUETH_IS_PRP(prueth)) {
-		debugfs_remove(prueth->tr_file);
-		prueth->tr_file = NULL;
-	}
-	debugfs_remove(prueth->error_stats_file);
+	prueth->tr_file = NULL;
 	prueth->error_stats_file = NULL;
-	debugfs_remove(prueth->root_dir);
 	prueth->root_dir = NULL;
 }
 #else
