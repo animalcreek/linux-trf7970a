@@ -229,6 +229,7 @@ struct prueth_emac {
 	struct prueth_queue_desc __iomem *tx_queue_descs;
 	struct prueth_queue_desc __iomem *tx_colq_descs;
 
+	unsigned int prp_emac_mode;
 	struct port_statistics stats; /* stats holder when i/f is down */
 	u32 tx_collisions;
 	u32 tx_collision_drops;
@@ -240,6 +241,7 @@ struct prueth_emac {
 #ifdef	CONFIG_DEBUG_FS
 	struct dentry *root_dir;
 	struct dentry *stats_file;
+	struct dentry *prp_emac_mode_file;
 #endif
 	int ptp_tx_enable;
 	int ptp_rx_enable;
@@ -654,6 +656,67 @@ static const struct file_operations prueth_emac_stats_fops = {
 	.release = single_release,
 };
 
+/* prueth_prp_emac_mode_write - write the user provided value to
+ * prp emac_mode debugfs file
+ */
+static ssize_t
+prueth_prp_emac_mode_write(struct file *file, const char __user *user_buf,
+			   size_t count, loff_t *ppos)
+{
+	struct prueth_emac *emac =
+			((struct seq_file *)(file->private_data))->private;
+	unsigned long emac_mode;
+	int err;
+
+	err = kstrtoul_from_user(user_buf, count, 0, &emac_mode);
+	if (err)
+		return err;
+
+	if (emac_mode > PRUETH_TX_PRP_EMAC_MODE)
+		return -EINVAL;
+
+	emac->prp_emac_mode = emac_mode;
+
+	return count;
+}
+
+/* prueth_prp_emac_mode_show - print the current emac mode flag
+ * in firmware. Applicable only for PRP device.
+ */
+static int
+prueth_prp_emac_mode_show(struct seq_file *sfp, void *data)
+{
+	struct prueth_emac *emac = (struct prueth_emac *)sfp->private;
+
+	seq_printf(sfp, "%u\n", emac->prp_emac_mode);
+
+	return 0;
+}
+
+/* prueth_prp_emac_mode_open:- Open the PRP emac mode file
+ *
+ * Description:
+ * This routine opens a debugfs file.prp_emac_mode file to
+ * configure PRP firmware in emac mode. This is used when PTP
+ * SAN is to be configured. User set the mode to 1 to indicate
+ * EMAC mode
+ */
+static int
+prueth_prp_emac_mode_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, prueth_prp_emac_mode_show,
+			   inode->i_private);
+}
+
+static const struct file_operations prueth_prp_emac_mode_fops = {
+	.owner	= THIS_MODULE,
+	.open	= prueth_prp_emac_mode_open,
+	.read	= seq_read,
+	.write	= prueth_prp_emac_mode_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
 /* prueth_debugfs_init - create  debugfs file for displaying queue stats
  *
  * Description:
@@ -689,6 +752,19 @@ static int prueth_debugfs_init(struct prueth_emac *emac)
 	}
 
 	emac->stats_file = de;
+
+	if (PRUETH_HAS_PRP(emac->prueth)) {
+		de = debugfs_create_file("prp_emac_mode", 0644,
+					 emac->root_dir, emac,
+					 &prueth_prp_emac_mode_fops);
+
+		if (!de) {
+			netdev_err(emac->ndev,
+				   "Cannot create prp emac mode file\n");
+			return rc;
+		}
+		emac->prp_emac_mode_file = de;
+	}
 
 	return 0;
 }
@@ -1279,6 +1355,7 @@ prueth_debugfs_term(struct prueth_emac *emac)
 {
 	debugfs_remove_recursive(emac->root_dir);
 	emac->stats_file = NULL;
+	emac->prp_emac_mode_file = NULL;
 	emac->root_dir = NULL;
 }
 
@@ -2163,6 +2240,7 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 			     int txport, enum prueth_queue_id queue_id)
 {
 	struct net_device *ndev = emac->ndev;
+	struct prueth *prueth = emac->prueth;
 	int pktlen;
 	struct prueth_queue_desc __iomem *queue_desc;
 	const struct prueth_queue_info *txqueue;
@@ -2183,19 +2261,19 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 
 	switch (emac->port_id) {
 	case PRUETH_PORT_MII0:
-		dram = emac->prueth->mem[PRUETH_MEM_DRAM0].va;
+		dram = prueth->mem[PRUETH_MEM_DRAM0].va;
 		break;
 	case PRUETH_PORT_MII1:
-		dram = emac->prueth->mem[PRUETH_MEM_DRAM1].va;
+		dram = prueth->mem[PRUETH_MEM_DRAM1].va;
 		break;
 	default:
 		netdev_err(emac->ndev, "invalid port\n");
 		return -EINVAL;
 	}
 
-	if (PRUETH_HAS_SWITCH(emac->prueth)) {
-		sram = emac->prueth->mem[PRUETH_MEM_SHARED_RAM].va;
-		dram = emac->prueth->mem[PRUETH_MEM_DRAM1].va;
+	if (PRUETH_HAS_SWITCH(prueth)) {
+		sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
+		dram = prueth->mem[PRUETH_MEM_DRAM1].va;
 	}
 
 	ret = skb_padto(skb, EMAC_MIN_PKTLEN);
@@ -2326,8 +2404,7 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 	 * to firmware
 	 */
 	if (skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP &&
-	    PRUETH_HAS_PTP(emac->prueth) &&
-	    emac_is_ptp_tx_enabled(emac)) {
+	    PRUETH_HAS_PTP(prueth) && emac_is_ptp_tx_enabled(emac)) {
 		skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 		emac_tx_ts_enqueue(emac, skb);
 	}
@@ -2335,10 +2412,18 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 	/* update first buffer descriptor */
 	wr_buf_desc = (pktlen << PRUETH_BD_LENGTH_SHIFT) & PRUETH_BD_LENGTH_MASK;
 
-	if (PRUETH_HAS_HSR(emac->prueth))
+	if (PRUETH_HAS_HSR(prueth))
 		wr_buf_desc |= BIT(PRUETH_BD_HSR_FRAME_SHIFT);
 
-	if (PRUETH_HAS_SWITCH(emac->prueth))
+	/* Set bit0 to indicate EMAC mode when using PRP firmware */
+	if (PRUETH_HAS_PRP(prueth)) {
+		if (emac->prp_emac_mode)
+			wr_buf_desc |= PRUETH_TX_PRP_EMAC_MODE;
+		else
+			wr_buf_desc &= ~PRUETH_TX_PRP_EMAC_MODE;
+	}
+
+	if (PRUETH_HAS_SWITCH(prueth))
 		writel(wr_buf_desc, sram + bd_wr_ptr);
 	else
 		writel(wr_buf_desc, dram + bd_wr_ptr);
@@ -3501,10 +3586,6 @@ static int emac_ndo_open(struct net_device *ndev)
 		}
 	}
 
-	ret = prueth_debugfs_init(emac);
-	if (ret)
-		goto clean_debugfs_hsr_prp;
-
 	/* reset and start PRU firmware */
 	if (PRUETH_HAS_SWITCH(prueth))
 		prueth_sw_emac_config(prueth, emac);
@@ -3525,7 +3606,7 @@ static int emac_ndo_open(struct net_device *ndev)
 		ret = emac_set_boot_pru(emac, ndev);
 
 	if (ret)
-		goto clean_debugfs;
+		goto clean_debugfs_hsr_prp;
 
 	if (PRUETH_HAS_RED(prueth))
 		prueth_start_red_table_timer(prueth);
@@ -3544,8 +3625,6 @@ static int emac_ndo_open(struct net_device *ndev)
 
 	return 0;
 
-clean_debugfs:
-	prueth_debugfs_term(emac);
 clean_debugfs_hsr_prp:
 	if (PRUETH_HAS_RED(prueth))
 		prueth_hsr_prp_debugfs_term(prueth);
@@ -3641,8 +3720,6 @@ static int emac_ndo_stop(struct net_device *ndev)
 
 	/* disable the mac port */
 	prueth_port_enable(prueth, emac->port_id, 0);
-
-	prueth_debugfs_term(emac);
 
 	mutex_lock(&prueth->mlock);
 
@@ -4670,6 +4747,7 @@ static int prueth_probe(struct platform_device *pdev)
 			goto netdev_unregister;
 		}
 
+		prueth_debugfs_init(prueth->emac[port]);
 		prueth->registered_netdevs[i] = prueth->emac[port]->ndev;
 	}
 
@@ -4727,6 +4805,7 @@ static int prueth_remove(struct platform_device *pdev)
 	for (i = 0; i < PRUETH_PORT_MAX; i++) {
 		if (!prueth->registered_netdevs[i])
 			continue;
+		prueth_debugfs_term(prueth->emac[i]);
 		unregister_netdev(prueth->registered_netdevs[i]);
 	}
 

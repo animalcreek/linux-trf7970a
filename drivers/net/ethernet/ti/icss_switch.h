@@ -232,4 +232,9 @@
 #define P0_COL_BUFFER_OFFSET    0xEE00
 #define P0_Q1_BUFFER_OFFSET	0x0000
 
+/* The below bit will be set in BD for EMAC mode in the egress
+ * direction and reset for PRP mode
+ */
+#define PRUETH_TX_PRP_EMAC_MODE	BIT(0)
+
 #endif /* __ICSS_SWITCH_H */
