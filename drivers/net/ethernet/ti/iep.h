@@ -38,10 +38,24 @@
 #define PRUSS_IEP_SLOW_COMPENSATION  0x0C
 #define PRUSS_IEP_COUNT_REG0         0x10
 #define PRUSS_IEP_COUNT_REG1         0x14
+#define PRUSS_IEP_CAPTURE_CFG_REG    0x18
+#define PRUSS_IEP_CAPTURE_STAT_REG   0x1c
+
+#define PRUSS_IEP_CAP6_RISE_REG0     0x50
+#define PRUSS_IEP_CAP6_RISE_REG1     0x54
+#define PRUSS_IEP_CAP6_FALL_REG0     0x58
+#define PRUSS_IEP_CAP6_FALL_REG1     0x5c
+
+#define PRUSS_IEP_CAP7_RISE_REG0     0x60
+#define PRUSS_IEP_CAP7_RISE_REG1     0x64
+#define PRUSS_IEP_CAP7_FALL_REG0     0x68
+#define PRUSS_IEP_CAP7_FALL_REG1     0x6c
+
 #define PRUSS_IEP_CMP_CFG_REG        0x70
 #define PRUSS_IEP_CMP_STAT_REG       0x74
 #define PRUSS_IEP_CMP0_REG0          0x78
 #define PRUSS_IEP_CMP0_REG1          0x7c
+
 #define PRUSS_IEP_CMP8_REG0          0xc0
 #define PRUSS_IEP_CMP8_REG1          0xc4
 #define PRUSS_IEP_SYNC_CTRL_REG      0x180
@@ -104,6 +118,7 @@ struct iep {
 	u32 __iomem  *pr2_sync0_mux;
 	u32 __iomem  *pr2_sync1_mux;
 	u32 __iomem  *pr2_latch0_mux;
+	u32 __iomem  *pr2_latch1_mux;
 	struct ptp_clock_info info;
 	struct ptp_clock *ptp_clock;
 	int phc_index;
@@ -116,6 +131,7 @@ struct iep {
 	unsigned long ov_check_period;
 	unsigned long ov_check_period_slow;
 	struct pps pps[MAX_PPS];
+	u32 latch_enable;
 };
 
 void iep_reset_timestamp(struct iep *iep, u16 ts_ofs);
