@@ -414,11 +414,32 @@ static int iep_ptp_feature_enable(struct ptp_clock_info *ptp,
 				  struct ptp_clock_request *rq, int on)
 {
 	struct iep *iep = container_of(ptp, struct iep, info);
+	struct timespec64 ts;
+	s64 ns;
 
 	switch (rq->type) {
 	case PTP_CLK_REQ_PPS:
-		/* command line only enables the one for measurement */
+		/* command line only enables the one for internal sync */
+		return iep_pps_enable(iep, IEP_PPS_INTERNAL, on);
+	case PTP_CLK_REQ_PEROUT:
+		/* this enables a pps for external measurement */
+		if (rq->perout.index != 0)
+			return -EINVAL;
+
+		if (on) {
+			ts.tv_sec = rq->perout.period.sec;
+			ts.tv_nsec = rq->perout.period.nsec;
+			ns = timespec64_to_ns(&ts);
+			if (ns != NSEC_PER_SEC) {
+				dev_err(iep->dev,
+					"Unsupported period %llu ns. Device supports only 1 sec period.\n",
+					ns);
+				return -EOPNOTSUPP;
+			}
+		}
+
 		return iep_pps_enable(iep, IEP_PPS_EXTERNAL, on);
+
 	default:
 		break;
 	}
@@ -586,7 +607,7 @@ static struct ptp_clock_info iep_info = {
 	.name		= "PRUSS timer",
 	.max_adj	= 1000000,
 	.n_ext_ts	= 0,
-	.n_pins		= 0,
+	.n_per_out	= 0,
 	.pps		= 0,
 	.adjfreq	= iep_adjfreq,
 	.adjtime	= iep_adjtime,
