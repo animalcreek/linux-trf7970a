@@ -17,9 +17,25 @@
 
 #define PPS_CMP(pps)        ((pps) + 1)
 #define PPS_SYNC(pps)       (pps)
+#define LATCHX_CAP(x)       ((x) + 6)
+
 #define IEP_CMPX_EN(cmp)    BIT((cmp) + 1)
 #define IEP_SYNCX_EN(sync)  BIT((sync) + 1)
 #define IEP_CMPX_HIT(cmp)   BIT(cmp)
+
+#define IEP_CAP6R_1ST_EV_EN BIT(6)
+#define IEP_CAP6F_1ST_EV_EN BIT(7)
+#define IEP_CAP7R_1ST_EV_EN BIT(8)
+#define IEP_CAP7F_1ST_EV_EN BIT(9)
+#define IEP_CAP6_ASYNC_EN   BIT(16)
+#define IEP_CAP7_ASYNC_EN   BIT(17)
+
+#define IEP_CAP6_EV_EN     (IEP_CAP6_ASYNC_EN | IEP_CAP6R_1ST_EV_EN)
+#define IEP_CAP7_EV_EN     (IEP_CAP7_ASYNC_EN | IEP_CAP7R_1ST_EV_EN)
+
+#define IEP_CAPR6_VALID     BIT(6)
+#define IEP_CAPR7_VALID     BIT(8)
+#define LATCHX_VALID(x)     (x ? IEP_CAPR7_VALID : IEP_CAPR6_VALID)
 
 #define SYNC0_RESET    (0x030 | IEP_SYNC0_EN)
 #define SYNC1_RESET    (0x0c0 | IEP_SYNC1_EN)
@@ -115,6 +131,44 @@ static inline void iep_enable_cmp(struct iep *iep, int cmp)
 	v = iep_read_reg(iep, PRUSS_IEP_CMP_CFG_REG);
 	v |= IEP_CMPX_EN(cmp);
 	iep_write_reg(iep, PRUSS_IEP_CMP_CFG_REG, v);
+}
+
+/* 0 <= latch <= 1 */
+static inline void iep_enable_latch(struct iep *iep, unsigned int latch)
+{
+	u32 v;
+
+	/* enable capture 6/7 in 1st event mode */
+	v = iep_read_reg(iep, PRUSS_IEP_CAPTURE_CFG_REG);
+	v |= (latch ? IEP_CAP7_EV_EN : IEP_CAP6_EV_EN);
+	iep_write_reg(iep, PRUSS_IEP_CAPTURE_CFG_REG, v);
+}
+
+/* 0 <= latch <= 1 */
+static inline void iep_disable_latch(struct iep *iep, unsigned int latch)
+{
+	u32 v;
+
+	v = iep_read_reg(iep, PRUSS_IEP_CAPTURE_CFG_REG);
+	v &= ~(latch ? IEP_CAP7_EV_EN : IEP_CAP6_EV_EN);
+	iep_write_reg(iep, PRUSS_IEP_CAPTURE_CFG_REG, v);
+}
+
+static inline u32 iep_get_latch_status(struct iep *iep)
+{
+	return iep_read_reg(iep, PRUSS_IEP_CAPTURE_STAT_REG);
+}
+
+/* 0 <= latch <= 1 */
+static inline u64 iep_get_latch_ts(struct iep *iep, unsigned int latch)
+{
+	u64 v;
+	u32 cap_reg = (latch ?
+		       PRUSS_IEP_CAP7_RISE_REG0 :
+		       PRUSS_IEP_CAP6_RISE_REG0);
+
+	memcpy_fromio(&v, iep->iep_reg + cap_reg, sizeof(v));
+	return v;
 }
 
 static inline cycle_t iep_get_count(struct iep *iep)
@@ -344,6 +398,9 @@ static void iep_sync_latch_pad_config(struct iep *iep)
 	iep->pr2_latch0_mux = (u32 __iomem *)ioremap(CTRL_CORE_PAD_VOUT1_D5,
 						    sizeof(u32));
 
+	iep->pr2_latch1_mux = (u32 __iomem *)ioremap(CTRL_CORE_PAD_VOUT1_D6,
+						    sizeof(u32));
+
 	/* mux CTRL_CORE_PAD_VOUT1_D7(0x4A00_35F8) (TRM p4727)
 	 *	VOUT1_D7_MUXMODE[0:3] = 0xA: pr2_edc_sync0_out
 	 *		Expansion Connector:17 (schematic p33)
@@ -367,6 +424,14 @@ static void iep_sync_latch_pad_config(struct iep *iep)
 	v = readl_relaxed(iep->pr2_latch0_mux);
 	v = (v & ~0xf) | 0xa;
 	writel_relaxed(v, iep->pr2_latch0_mux);
+
+	/* mux CTRL_CORE_PAD_VOUT1_D6(0x4A00_35F4) (TRM p4726)
+	 *	VOUT1_D6_MUXMODE[0:3] = 0xA: pr2_edc_latch1_in
+	 *		Expansion Connector:15 (schematic p33)
+	 */
+	v = readl_relaxed(iep->pr2_latch1_mux);
+	v = (v & ~0xf) | 0xa;
+	writel_relaxed(v, iep->pr2_latch1_mux);
 }
 
 /* One time configs
@@ -410,6 +475,31 @@ static int iep_pps_init(struct iep *iep)
 	return 0;
 }
 
+/* EXTTS */
+static int iep_extts_enable(struct iep *iep, u32 index, int on)
+{
+	unsigned long flags;
+
+	if (index >= iep->info.n_ext_ts)
+		return -ENXIO;
+
+	if (((iep->latch_enable & BIT(index)) >> index) == on)
+		return 0;
+
+	spin_lock_irqsave(&iep->ptp_lock, flags);
+
+	if (on) {
+		iep_enable_latch(iep, index);
+		iep->latch_enable |= BIT(index);
+	} else {
+		iep_disable_latch(iep, index);
+		iep->latch_enable &= ~BIT(index);
+	}
+
+	spin_unlock_irqrestore(&iep->ptp_lock, flags);
+	return 0;
+}
+
 static int iep_ptp_feature_enable(struct ptp_clock_info *ptp,
 				  struct ptp_clock_request *rq, int on)
 {
@@ -418,6 +508,8 @@ static int iep_ptp_feature_enable(struct ptp_clock_info *ptp,
 	s64 ns;
 
 	switch (rq->type) {
+	case PTP_CLK_REQ_EXTTS:
+		return iep_extts_enable(iep, rq->extts.index, on);
 	case PTP_CLK_REQ_PPS:
 		/* command line only enables the one for internal sync */
 		return iep_pps_enable(iep, IEP_PPS_INTERNAL, on);
@@ -544,6 +636,31 @@ static int iep_proc_pps(struct iep *iep, int pps)
 	return iep_pps_report(iep, pps);
 }
 
+static int iep_proc_latch(struct iep *iep)
+{
+	struct ptp_clock_event pevent;
+	int i, reported = 0;
+	u64 ts;
+	u32 v;
+
+	v = iep_get_latch_status(iep);
+
+	for (i = 0; i < iep->info.n_ext_ts; i++) {
+		if (!(v & LATCHX_VALID(i)))
+			continue;
+
+		ts = iep_get_latch_ts(iep, i);
+		/* report the event */
+		pevent.timestamp = timecounter_cyc2time(&iep->tc, ts);
+		pevent.type = PTP_CLOCK_EXTTS;
+		pevent.index = i;
+		ptp_clock_event(iep->ptp_clock, &pevent);
+		++reported;
+	}
+
+	return reported;
+}
+
 static long iep_overflow_check(struct ptp_clock_info *ptp)
 {
 	struct iep *iep = container_of(ptp, struct iep, info);
@@ -557,6 +674,8 @@ static long iep_overflow_check(struct ptp_clock_info *ptp)
 
 	spin_lock_irqsave(&iep->ptp_lock, flags);
 	ts = ns_to_timespec64(timecounter_read(&iep->tc));
+
+	iep_proc_latch(iep);
 
 	for (pps = 0; pps < MAX_PPS; pps++) {
 		n = iep_proc_pps(iep, pps);
