@@ -618,7 +618,7 @@ static int netcp_process_one_rx_packet(struct netcp_intf *netcp)
 		/* warning!!!! We are retrieving the virtual ptr in the sw_data
 		 * field as a 32bit value. Will not work on 64bit machines
 		 */
-		page = (struct page *)KNAV_DMA_GET_SW_DATA0(desc);
+		page = (struct page *)KNAV_DMA_GET_SW_DATA0(ndesc);
 
 		if (likely(dma_buff && buf_len && page)) {
 			dma_unmap_page(netcp->dev, dma_buff, PAGE_SIZE,
