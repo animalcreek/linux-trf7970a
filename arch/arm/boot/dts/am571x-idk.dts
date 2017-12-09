@@ -288,9 +288,11 @@
 &mac {
 	/* cptr pps1 generator properties */
 	timers = <&timer16>;
-	pinctrl-names = "pwm_off", "pwm_on";
+	pinctrl-names = "pwm_off", "pwm_on", "ref_off", "ref_on";
 	pinctrl-0 = <&pps1_timer16_pwm_off>;
 	pinctrl-1 = <&pps1_timer16_pwm_on>;
+	pinctrl-2 = <&pps1_timer16_pwm2_off>;
+	pinctrl-3 = <&pps1_timer16_pwm2_on>;
 };
 
 &dra7_pmx_core {
@@ -305,4 +307,17 @@
 			DRA7XX_CORE_IOPAD(0x36a0, PIN_OUTPUT | MUX_MODE15)
 		>;
 	};
+
+	pps1_timer16_pwm2_on: pps1_timer16_pwm2_on {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x3680, PIN_OUTPUT | MUX_MODE7)
+		>;
+	};
+
+	pps1_timer16_pwm2_off: pps1_timer16_pwm2_off {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x3680, PIN_OUTPUT | MUX_MODE15)
+		>;
+	};
+
 };
