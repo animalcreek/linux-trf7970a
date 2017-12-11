@@ -1257,18 +1257,31 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 	struct device *dev = prueth->dev;
 	int rc = -1;
 	struct dentry *de = NULL;
+	int id = prueth->pruss_id;
+	char dir[32];
+
+	memset(dir, 0, sizeof(dir));
+	if (prueth->fw_data->driver_data == PRUSS_AM57XX)
+		id -= 1;
 
 	if (PRUETH_HAS_HSR(prueth)) {
-		de = debugfs_create_dir("prueth-hsr", NULL);
+		if (id == 1)
+			sprintf(dir, "prueth-hsr");
+		else
+			sprintf(dir, "prueth-hsr%d", id);
 	} else if (PRUETH_HAS_PRP(prueth)) {
-		de = debugfs_create_dir("prueth-prp", NULL);
+		if (id == 1)
+			sprintf(dir, "prueth-prp");
+		else
+			sprintf(dir, "prueth-prp%d", id);
 	} else {
 		dev_err(dev, "unknown eth_type: %u\n", prueth->eth_type);
 		return -EINVAL;
 	}
 
+	de = debugfs_create_dir(dir, NULL);
 	if (!de) {
-		dev_err(dev, "Cannot create hsr-prp debugfs root\n");
+		dev_err(dev, "Cannot create %s debugfs root\n", dir);
 		return rc;
 	}
 
