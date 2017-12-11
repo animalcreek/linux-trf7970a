@@ -516,12 +516,12 @@ static int hsr_prp_fill_frame_info(struct hsr_prp_frame_info *frame,
 
 	memset(frame, 0, sizeof(*frame));
 	frame->is_supervision = is_supervision_frame(priv, skb);
+	/* When offloaded, don't expect Supervision frame which
+	 * is terminated at h/w or f/w that offload the LRE
+	 */
 	if (frame->is_supervision && priv->rx_offloaded &&
-	    (port->type != HSR_PRP_PT_MASTER)) {
-		WARN_ONCE(1,
-			  "HSR: unexpected rx supervisor frame when offloaded");
+	    (port->type != HSR_PRP_PT_MASTER))
 		return -1;
-	}
 
 	/* For Offloaded case, there is no need for node list since
 	 * firmware/hardware implements LRE function.
