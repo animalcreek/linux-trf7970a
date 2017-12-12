@@ -62,7 +62,7 @@ struct cpts_skb_cb_data {
 #define CPTS_TMR_RELOAD_CNT	(0xFFFFFFFFUL - 100000000UL/CPTS_TMR_CLK_PERIOD + 1)
 #define CPTS_TMR_CMP_CNT	(CPTS_TMR_RELOAD_CNT + 10000000UL/CPTS_TMR_CLK_PERIOD)
 #define CPTS_MAX_MMR_ACCESS_TIME	1000
-#define CPTS_NOM_MMR_ACCESS_TIME	450
+#define CPTS_NOM_MMR_ACCESS_TIME	250
 
 static u32 tmr_reload_cnt = CPTS_TMR_RELOAD_CNT;
 static u32 tmr_reload_cnt_prev = CPTS_TMR_RELOAD_CNT;
@@ -383,9 +383,6 @@ static inline void cpts_pps_stop(struct cpts *cpts)
 {
 	u32 v;
 
-	/* disable timer pinout */
-	pinctrl_select_state(cpts->pins, cpts->pin_state_pwm_off);
-
 	/* disable timer */
 	v = READ_TCLR;
 	v &= ~BIT(0);
@@ -417,9 +414,31 @@ static int cpts_pps_enable(struct cpts *cpts, int on)
 	if (!on)
 		return 0;
 
-	cpts_pps_start(cpts);
+	if (cpts->ref_enable == -1) {
+		cpts_pps_start(cpts);
+		cpts_tmr_poll(cpts, false);
+	}
 
-	cpts_tmr_poll(cpts, false);
+	return 0;
+}
+
+static int cpts_ref_enable(struct cpts *cpts, int on)
+{
+	on = (on ? 1 : 0);
+
+	if (cpts->ref_enable == on)
+		return 0;
+
+	cpts->ref_enable = on;
+
+	/* will stop after up coming pulse */
+	if (!on)
+		return 0;
+
+	if (cpts->pps_enable == -1) {
+		cpts_pps_start(cpts);
+		cpts_tmr_poll(cpts, false);
+	}
 
 	return 0;
 }
@@ -429,6 +448,7 @@ static int cpts_pps_init(struct cpts *cpts)
 	int err;
 
 	cpts->pps_enable = -1;
+	cpts->ref_enable = -1;
 
 #ifdef CONFIG_OMAP_DM_TIMER
 	omap_dm_timer_enable(cpts->odt);
@@ -459,10 +479,21 @@ static void cpts_pps_schedule(struct cpts *cpts)
 	reported = cpts_proc_pps_ts_events(cpts);
 	spin_unlock_irqrestore(&cpts->lock, flags);
 
-	if (cpts->pps_enable >= 0) {
+	if ((cpts->pps_enable >= 0) || (cpts->ref_enable >= 0)) {
 		if (!cpts->pps_enable) {
-			cpts_pps_stop(cpts);
 			cpts->pps_enable = -1;
+			pinctrl_select_state(cpts->pins,
+					     cpts->pin_state_pwm_off);
+		}
+
+		if (!cpts->ref_enable) {
+			cpts->ref_enable = -1;
+			pinctrl_select_state(cpts->pins,
+					     cpts->pin_state_ref_off);
+		}
+
+		if ((cpts->pps_enable == -1) && (cpts->ref_enable == -1)) {
+			cpts_pps_stop(cpts);
 		} else {
 			if(reported)
 				cpts_tmr_poll(cpts, true);
@@ -516,12 +547,31 @@ static int cpts_ptp_enable(struct ptp_clock_info *ptp,
 			   struct ptp_clock_request *rq, int on)
 {
 	struct cpts *cpts = container_of(ptp, struct cpts, info);
+	struct timespec64 ts;
+	s64 ns;
 
 	switch (rq->type) {
 	case PTP_CLK_REQ_EXTTS:
 		return cpts_extts_enable(cpts, rq->extts.index, on);
 	case PTP_CLK_REQ_PPS:
 		return cpts_pps_enable(cpts, on);
+	case PTP_CLK_REQ_PEROUT:
+		/* this enables a pps for external measurement */
+		if (rq->perout.index != 0)
+			return -EINVAL;
+
+		if (on) {
+			ts.tv_sec = rq->perout.period.sec;
+			ts.tv_nsec = rq->perout.period.nsec;
+			ns = timespec64_to_ns(&ts);
+			if (ns != NSEC_PER_SEC) {
+				dev_err(cpts->dev, "Unsupported period %llu ns.Device supports only 1 sec period.\n",
+					ns);
+				return -EOPNOTSUPP;
+			}
+		}
+
+		return cpts_ref_enable(cpts, on);
 	default:
 		break;
 	}
@@ -555,6 +605,7 @@ static struct ptp_clock_info cpts_info = {
 	.max_adj	= 1000000,
 	.n_ext_ts	= 0,
 	.n_pins		= 0,
+	.n_per_out	= 1,
 	.pps		= 1,
 	.adjfreq	= cpts_ptp_adjfreq,
 	.adjtime	= cpts_ptp_adjtime,
@@ -824,6 +875,20 @@ static int cpts_of_1pps_parse(struct cpts *cpts, struct device_node *node)
 		return PTR_ERR(cpts->pin_state_pwm_off);
 	}
 
+	cpts->pin_state_ref_on = pinctrl_lookup_state(cpts->pins, "ref_on");
+	if (IS_ERR(cpts->pin_state_ref_on)) {
+		dev_err(cpts->dev, "lookup for ref_on pin state failed: %ld\n",
+			PTR_ERR(cpts->pin_state_ref_on));
+		return PTR_ERR(cpts->pin_state_ref_on);
+	}
+
+	cpts->pin_state_ref_off = pinctrl_lookup_state(cpts->pins, "ref_off");
+	if (IS_ERR(cpts->pin_state_ref_off)) {
+		dev_err(cpts->dev, "lookup for ref_off pin state failed: %ld\n",
+			PTR_ERR(cpts->pin_state_ref_off));
+		return PTR_ERR(cpts->pin_state_ref_off);
+	}
+
 	return 0;
 }
 
@@ -1038,14 +1103,30 @@ static void cpts_tmr_init(struct cpts *cpts)
 			      OMAP_TIMER_INT_OVERFLOW, 0);
 
 	pinctrl_select_state(cpts->pins, cpts->pin_state_pwm_off);
+	pinctrl_select_state(cpts->pins, cpts->pin_state_ref_off);
 }
 
 static void inline cpts_turn_on_off_1pps_output(struct cpts *cpts, u64 ts)
 {
-	if (ts > 905000000)
-		pinctrl_select_state(cpts->pins, cpts->pin_state_pwm_on);
-	else if ((ts < 100000000) && (ts >= 5000000))
-		pinctrl_select_state(cpts->pins, cpts->pin_state_pwm_off);
+	if (ts > 905000000) {
+		if (cpts->pps_enable == 1)
+			pinctrl_select_state(cpts->pins,
+					     cpts->pin_state_pwm_on);
+
+		if (cpts->ref_enable == 1)
+			pinctrl_select_state(cpts->pins,
+					     cpts->pin_state_ref_on);
+
+		pr_debug("1pps on at %llu\n", ts);
+	} else if ((ts < 100000000) && (ts >= 5000000)) {
+		if (cpts->pps_enable == 1)
+			pinctrl_select_state(cpts->pins,
+					     cpts->pin_state_pwm_off);
+
+		if (cpts->ref_enable == 1)
+			pinctrl_select_state(cpts->pins,
+					     cpts->pin_state_ref_off);
+	}
 }
 
 /* The reload counter value is going to affect all cycles after the next SYNC

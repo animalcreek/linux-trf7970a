@@ -144,6 +144,7 @@ struct cpts {
 	bool use_1pps;
 	int pps_enable;
 	int pps_state;
+	int ref_enable;
 	struct omap_dm_timer *odt;/* timer for 1PPS generator */
 	u32 count_prev;
 	u64 hw_timestamp;
@@ -151,6 +152,8 @@ struct cpts {
 	struct pinctrl *pins;
 	struct pinctrl_state *pin_state_pwm_off;
 	struct pinctrl_state *pin_state_pwm_on;
+	struct pinctrl_state *pin_state_ref_off;
+	struct pinctrl_state *pin_state_ref_on;
 
 	int pps_tmr_irqn;
 
