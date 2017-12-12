@@ -158,7 +158,7 @@
 	};
 
 	/* Dual-MAC Ethernet application node on PRU-ICSS2 */
-	pruss2_eth {
+	pruss2_eth: pruss2_eth {
 		compatible = "ti,am57-prueth";
 		pruss = <&pruss2>;
 		sram = <&ocmcram1>;
