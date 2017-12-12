@@ -1042,9 +1042,9 @@ static void cpts_tmr_init(struct cpts *cpts)
 
 static void inline cpts_turn_on_off_1pps_output(struct cpts *cpts, u64 ts)
 {
-	if (ts > 915000000)
+	if (ts > 905000000)
 		pinctrl_select_state(cpts->pins, cpts->pin_state_pwm_on);
-	else if ((ts < 100000000) && (ts >= 10000000))
+	else if ((ts < 100000000) && (ts >= 5000000))
 		pinctrl_select_state(cpts->pins, cpts->pin_state_pwm_off);
 }
 
