@@ -286,13 +286,16 @@
 };
 
 &mac {
-	/* cptr pps1 generator properties */
-	timers = <&timer16>;
-	pinctrl-names = "pwm_off", "pwm_on", "ref_off", "ref_on";
+	/* cptr pps1 generator and latch properties */
+	timers = <&timer16>, <&timer15>;
+	pinctrl-names = "pwm_off", "pwm_on", "ref_off", "ref_on",
+			"latch_on", "latch_off";
 	pinctrl-0 = <&pps1_timer16_pwm_off>;
 	pinctrl-1 = <&pps1_timer16_pwm_on>;
 	pinctrl-2 = <&pps1_timer16_pwm2_off>;
 	pinctrl-3 = <&pps1_timer16_pwm2_on>;
+	pinctrl-4 = <&pps1_timer15_latch_on>;
+	pinctrl-5 = <&pps1_timer15_latch_off>;
 };
 
 &dra7_pmx_core {
@@ -317,6 +320,18 @@
 	pps1_timer16_pwm2_off: pps1_timer16_pwm2_off {
 		pinctrl-single,pins = <
 			DRA7XX_CORE_IOPAD(0x3680, PIN_OUTPUT | MUX_MODE15)
+		>;
+	};
+
+	pps1_timer15_latch_on: pps1_timer15_latch_on {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x3684, PIN_INPUT | MUX_MODE7)
+		>;
+	};
+
+	pps1_timer15_latch_off: pps1_timer15_latch_off {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x3684, PIN_INPUT | MUX_MODE15)
 		>;
 	};
 
