@@ -635,10 +635,9 @@ static struct ptp_clock_info cpts_info = {
 	.owner		= THIS_MODULE,
 	.name		= "CTPS timer",
 	.max_adj	= 1000000,
-	.n_ext_ts	= CPTS_MAX_LATCH,
+	.n_ext_ts	= 0,
 	.n_pins		= 0,
-	.n_per_out	= 1,
-	.pps		= 1,
+	.pps		= 0,
 	.adjfreq	= cpts_ptp_adjfreq,
 	.adjtime	= cpts_ptp_adjtime,
 	.gettime64	= cpts_ptp_gettime,
@@ -1068,6 +1067,11 @@ struct cpts *cpts_create(struct device *dev, void __iomem *regs,
 				ret);
 			return ERR_PTR(ret);
 		}
+
+		/* Enable 1PPS related features	*/
+		cpts->info.pps		= 1;
+		cpts->info.n_ext_ts	= CPTS_MAX_LATCH;
+		cpts->info.n_per_out	= 1;
 	}
 
 	return cpts;
