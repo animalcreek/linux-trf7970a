@@ -106,7 +106,9 @@ enum {
 #define CPTS_MAX_EVENTS 32
 
 #define CPTS_EVENT_RX_TX_TIMEOUT 20 /* ms */
-#define CPTS_EVENT_HWSTAMP_TIMEOUT 50 /* ms */
+#define CPTS_EVENT_HWSTAMP_TIMEOUT 200 /* ms */
+
+#define CPTS_MAX_LATCH	3
 
 struct cpts_event {
 	struct list_head list;
@@ -142,20 +144,27 @@ struct cpts {
 	struct sk_buff_head txq;
 
 	bool use_1pps;
+	bool pps_latch_receive;
 	int pps_enable;
 	int pps_state;
+	int pps_latch_state;
 	int ref_enable;
 	struct omap_dm_timer *odt;/* timer for 1PPS generator */
+	struct omap_dm_timer *odt2;/* timer for 1PPS latch */
 	u32 count_prev;
 	u64 hw_timestamp;
+	u32 pps_latch_offset;
 
 	struct pinctrl *pins;
 	struct pinctrl_state *pin_state_pwm_off;
 	struct pinctrl_state *pin_state_pwm_on;
 	struct pinctrl_state *pin_state_ref_off;
 	struct pinctrl_state *pin_state_ref_on;
+	struct pinctrl_state *pin_state_latch_off;
+	struct pinctrl_state *pin_state_latch_on;
 
 	int pps_tmr_irqn;
+	int pps_latch_irqn;
 
 	struct kthread_worker *pps_kworker;
 	struct kthread_delayed_work pps_work;
