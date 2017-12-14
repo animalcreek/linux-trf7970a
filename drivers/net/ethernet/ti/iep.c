@@ -279,8 +279,8 @@ static int iep_pps_init(struct iep *iep)
 	return 0;
 }
 
-static int iep_enable(struct ptp_clock_info *ptp,
-		      struct ptp_clock_request *rq, int on)
+static int iep_ptp_feature_enable(struct ptp_clock_info *ptp,
+				  struct ptp_clock_request *rq, int on)
 {
 	struct iep *iep = container_of(ptp, struct iep, info);
 
@@ -421,7 +421,7 @@ static struct ptp_clock_info iep_info = {
 	.adjtime	= iep_adjtime,
 	.gettime64	= iep_gettime,
 	.settime64	= iep_settime,
-	.enable		= iep_enable,
+	.enable		= iep_ptp_feature_enable,
 	.do_aux_work	= iep_overflow_check,
 };
 
