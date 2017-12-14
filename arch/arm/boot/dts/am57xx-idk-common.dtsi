@@ -188,6 +188,11 @@
 			/*tx-queue-size = /bits/ 16 <97 97 97 97 48>;*/
 		};
 	};
+
+	ptp_bc: ptp_bc {
+		compatible = "ti,am57-bc";
+		status = "disabled";
+	};
 };
 
 &dra7_pmx_core {
