@@ -56,6 +56,17 @@
 	pinctrl-5 = <&pps1_timer15_latch_off>;
 };
 
+&pruss2_eth {
+	pinctrl-names = "sync0_off", "sync0_on", "latch0_off", "latch0_on",
+			"sync1_off", "sync1_on";
+	pinctrl-0 = <&pr2_edc_sync0_off>;
+	pinctrl-1 = <&pr2_edc_sync0_on>;
+	pinctrl-2 = <&pr2_edc_latch0_off>;
+	pinctrl-3 = <&pr2_edc_latch0_on>;
+	pinctrl-4 = <&pr2_edc_sync1_off>;
+	pinctrl-5 = <&pr2_edc_sync1_on>;
+};
+
 &dra7_pmx_core {
 	pps1_timer16_pwm_on: pps1_timer16_pwm_on {
 		pinctrl-single,pins = <
@@ -93,4 +104,39 @@
 		>;
 	};
 
+	pr2_edc_sync0_on: pr2_edc_sync0_on {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x35f8, PIN_OUTPUT | MUX_MODE10)
+		>;
+	};
+
+	pr2_edc_sync0_off: pr2_edc_sync0_off {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x35f8, PIN_OUTPUT | MUX_MODE15)
+		>;
+	};
+
+	pr2_edc_latch0_on: pr2_edc_latch0_on {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x35f0, PIN_INPUT | MUX_MODE10)
+		>;
+	};
+
+	pr2_edc_latch0_off: pr2_edc_latch0_off {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x35f0, PIN_INPUT | MUX_MODE15)
+		>;
+	};
+
+	pr2_edc_sync1_on: pr2_edc_sync1_on {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x35fc, PIN_OUTPUT | MUX_MODE10)
+		>;
+	};
+
+	pr2_edc_sync1_off: pr2_edc_sync1_off {
+		pinctrl-single,pins = <
+			DRA7XX_CORE_IOPAD(0x35fc, PIN_OUTPUT | MUX_MODE15)
+		>;
+	};
 };
