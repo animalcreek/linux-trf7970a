@@ -165,6 +165,7 @@ struct cpts {
 
 	int pps_tmr_irqn;
 	int pps_latch_irqn;
+	int bc_clkid;
 
 	struct kthread_worker *pps_kworker;
 	struct kthread_delayed_work pps_work;
