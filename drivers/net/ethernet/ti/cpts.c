@@ -33,6 +33,7 @@
 #include <linux/of_irq.h>
 
 #include "cpts.h"
+#include "ptp_bc.h"
 
 #define CPTS_SKB_TX_WORK_TIMEOUT 1 /* jiffies */
 
@@ -578,6 +579,7 @@ static int cpts_ptp_enable(struct ptp_clock_info *ptp,
 	struct cpts *cpts = container_of(ptp, struct cpts, info);
 	struct timespec64 ts;
 	s64 ns;
+	bool ok;
 
 	switch (rq->type) {
 	case PTP_CLK_REQ_EXTTS:
@@ -586,6 +588,13 @@ static int cpts_ptp_enable(struct ptp_clock_info *ptp,
 			on);
 		return cpts_extts_enable(cpts, rq->extts.index, on);
 	case PTP_CLK_REQ_PPS:
+		if (cpts->use_1pps) {
+			ok = ptp_bc_clock_sync_enable(cpts->bc_clkid, on);
+			if (!ok) {
+				pr_info("cpts error: bc clk sync pps enable denied\n");
+				return -EBUSY;
+			}
+		}
 		return cpts_pps_enable(cpts, on);
 	case PTP_CLK_REQ_PEROUT:
 		/* this enables a pps for external measurement */
@@ -797,6 +806,11 @@ int cpts_register(struct cpts *cpts)
 	ptp_schedule_worker(cpts->clock, cpts->ov_check_period);
 	cpts_write32(cpts, cpts_read32(cpts, control) |
 		     HW4_TS_PUSH_EN, control);
+
+	if (cpts->use_1pps)
+		cpts->bc_clkid = ptp_bc_clock_register();
+
+	pr_info("cpts ptp bc clkid %d\n", cpts->bc_clkid);
 	return 0;
 
 err_ptp:
