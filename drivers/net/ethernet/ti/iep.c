@@ -14,6 +14,7 @@
  */
 #include "icss_time_sync.h"
 #include "iep.h"
+#include "ptp_bc.h"
 
 #define PPS_CMP(pps)        ((pps) + 1)
 #define PPS_SYNC(pps)       (pps)
@@ -480,12 +481,20 @@ static int iep_ptp_feature_enable(struct ptp_clock_info *ptp,
 	struct iep *iep = container_of(ptp, struct iep, info);
 	struct timespec64 ts;
 	s64 ns;
+	bool ok;
 
 	switch (rq->type) {
 	case PTP_CLK_REQ_EXTTS:
 		return iep_extts_enable(iep, rq->extts.index, on);
 	case PTP_CLK_REQ_PPS:
 		/* command line only enables the one for internal sync */
+		if (iep->bc_pps_sync) {
+			ok = ptp_bc_clock_sync_enable(iep->bc_clkid, on);
+			if (!ok) {
+				pr_info("iep error: bc clk sync pps enable denied\n");
+				return -EBUSY;
+			}
+		}
 		return iep_pps_enable(iep, IEP_PPS_INTERNAL, on);
 	case PTP_CLK_REQ_PEROUT:
 		/* this enables a pps for external measurement */
@@ -881,6 +890,11 @@ int iep_register(struct iep *iep)
 	iep_time_sync_start(iep);
 
 	ptp_schedule_worker(iep->ptp_clock, iep->ov_check_period);
+
+	if (iep->bc_pps_sync)
+		iep->bc_clkid = ptp_bc_clock_register();
+
+	pr_info("iep ptp bc clkid %d\n", iep->bc_clkid);
 	return 0;
 }
 
@@ -994,6 +1008,8 @@ struct iep *iep_create(struct device *dev, void __iomem *sram,
 		iep->bc_pps_sync = true;
 	else
 		iep->bc_pps_sync = false;
+
+	iep->bc_clkid = -1;
 
 	/* save cc.mult original value as it can be modified
 	 * by iep_adjfreq().
