@@ -17,11 +17,16 @@
 
 #if IS_ENABLED(CONFIG_TI_PTP_BC)
 int ptp_bc_clock_register(void);
+void ptp_bc_clock_unregister(int clkid);
 bool ptp_bc_clock_sync_enable(int clkid, int enable);
 #else
 static int ptp_bc_clock_register(void)
 {
 	return -1;
+}
+
+static int ptp_bc_clock_unregister(int clkid)
+{
 }
 
 static bool ptp_bc_clock_sync_enable(int clkid, int enable)
