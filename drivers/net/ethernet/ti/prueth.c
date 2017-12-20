@@ -4813,6 +4813,7 @@ static int prueth_remove(struct platform_device *pdev)
 	struct prueth *prueth = platform_get_drvdata(pdev);
 	int i;
 
+	iep_release(prueth->iep);
 	prueth_hsr_prp_debugfs_term(prueth);
 	prueth->tbl_check_period = 0;
 

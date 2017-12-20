@@ -907,7 +907,6 @@ void iep_unregister(struct iep *iep)
 	for (i = 0; i < MAX_PPS; i++)
 		iep_pps_stop(iep, i);
 
-	devm_pinctrl_put(iep->pins);
 	iep_time_sync_stop(iep);
 	ptp_clock_unregister(iep->ptp_clock);
 	iep->ptp_clock = NULL;
@@ -921,14 +920,17 @@ static int iep_get_pps_extts_pins(struct iep *iep)
 {
 	struct pinctrl_state *on, *off;
 	u32 has_on_off;
+	struct pinctrl *pins;
 
-	iep->pins = devm_pinctrl_get(iep->dev);
-	if (IS_ERR(iep->pins)) {
+	pins = devm_pinctrl_get(iep->dev);
+	if (IS_ERR(pins)) {
+		iep->pins = NULL;
 		dev_err(iep->dev, "request for sync latch pins failed: %ld\n",
-			PTR_ERR(iep->pins));
-		return PTR_ERR(iep->pins);
+			PTR_ERR(pins));
+		return PTR_ERR(pins);
 	}
 
+	iep->pins = pins;
 	has_on_off = 0;
 
 	on = pinctrl_lookup_state(iep->pins, "sync0_on");
@@ -1018,4 +1020,10 @@ struct iep *iep_create(struct device *dev, void __iomem *sram,
 	iep->cc_mult = iep->cc.mult;
 
 	return iep;
+}
+
+void iep_release(struct iep *iep)
+{
+	if (iep->pins)
+		devm_pinctrl_put(iep->pins);
 }
