@@ -18,21 +18,52 @@
 #include "ptp_bc.h"
 
 #define PTP_BC_MAGIC 0x1ffffff
+#define MAX_CLKS 3
 
 static unsigned int bc_clocks_registered;
 static u32 bc_clk_sync_enabled;
 static spinlock_t bc_sync_lock; /* protects bc var */
 static bool ptp_bc_initialized;
 
+static inline int bc_clock_is_registered(int clkid)
+{
+	return (bc_clocks_registered & BIT(clkid));
+}
+
+static int ptp_bc_alloc_clk_id(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_CLKS; i++) {
+		if (!bc_clock_is_registered(i)) {
+			bc_clocks_registered |= BIT(i);
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+static void ptp_bc_free_clk_id(int clkid)
+{
+	if (clkid >= 0 && clkid < MAX_CLKS)
+		bc_clocks_registered &= ~BIT(clkid);
+}
+
 bool ptp_bc_clock_sync_enable(int clkid, int enable)
 {
 	unsigned long flags;
 	bool allow = false;
 
-	if (clkid < 0 || clkid >= bc_clocks_registered)
+	if (clkid < 0 || clkid >= MAX_CLKS)
 		return false;
 
 	spin_lock_irqsave(&bc_sync_lock, flags);
+
+	if (!bc_clock_is_registered(clkid)) {
+		spin_unlock_irqrestore(&bc_sync_lock, flags);
+		return false;
+	}
 
 	if (enable) {
 		if (bc_clk_sync_enabled) {
@@ -74,24 +105,35 @@ int ptp_bc_clock_register(void)
 	}
 
 	spin_lock_irqsave(&bc_sync_lock, flags);
-	if (bc_clocks_registered >= 3) {
-		pr_err("ptp_bc error: max clocks allowed %d\n", 3);
-		goto out;
-	}
-
-	id = bc_clocks_registered++;
-
-out:
+	id = ptp_bc_alloc_clk_id();
 	spin_unlock_irqrestore(&bc_sync_lock, flags);
+
+	if (id < 0)
+		pr_err("ptp_bc register error: max clocks allowed %d\n",
+		       MAX_CLKS);
+
 	return id;
 }
 EXPORT_SYMBOL_GPL(ptp_bc_clock_register);
+
+void ptp_bc_clock_unregister(int clkid)
+{
+	unsigned long flags;
+
+	if (!ptp_bc_initialized)
+		return;
+
+	spin_lock_irqsave(&bc_sync_lock, flags);
+	ptp_bc_free_clk_id(clkid);
+	spin_unlock_irqrestore(&bc_sync_lock, flags);
+}
+EXPORT_SYMBOL_GPL(ptp_bc_clock_unregister);
 
 static int ptp_bc_probe(struct platform_device *pdev)
 {
 	spin_lock_init(&bc_sync_lock);
 	bc_clk_sync_enabled = 0;
-	bc_clk_sync_enabled = 0;
+	bc_clocks_registered = 0;
 	ptp_bc_initialized  = true;
 	return 0;
 }

@@ -910,6 +910,7 @@ void iep_unregister(struct iep *iep)
 	iep_time_sync_stop(iep);
 	ptp_clock_unregister(iep->ptp_clock);
 	iep->ptp_clock = NULL;
+	ptp_bc_clock_unregister(iep->bc_clkid);
 }
 
 /* Get the pps (sync) and extts (latch) on/off pinctrl
