@@ -707,7 +707,6 @@ done:
 
 static struct ptp_clock_info iep_info = {
 	.owner		= THIS_MODULE,
-	.name		= "PRUSS timer",
 	.max_adj	= 1000000,
 	.n_ext_ts	= 0,
 	.n_per_out	= 0,
@@ -982,7 +981,7 @@ static int iep_get_pps_extts_pins(struct iep *iep)
 }
 
 struct iep *iep_create(struct device *dev, void __iomem *sram,
-		       void __iomem *iep_reg)
+		       void __iomem *iep_reg, int pruss_id)
 {
 	struct iep *iep;
 
@@ -1002,6 +1001,8 @@ struct iep *iep_create(struct device *dev, void __iomem *sram,
 	iep->cc.read = iep_cc_read;
 	iep->cc.mask = CLOCKSOURCE_MASK(64);
 	iep->info = iep_info;
+	snprintf(iep->info.name, sizeof(iep->info.name),
+		 "PRUSS%d timer", pruss_id);
 
 	iep_get_pps_extts_pins(iep);
 	if (iep->info.pps && iep->info.n_ext_ts)

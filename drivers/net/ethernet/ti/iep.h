@@ -139,6 +139,6 @@ int iep_tx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb);
 int iep_register(struct iep *iep);
 void iep_unregister(struct iep *iep);
 struct iep *iep_create(struct device *dev, void __iomem *sram,
-		       void __iomem *iep_reg);
+		       void __iomem *iep_reg, int pruss_id);
 void iep_release(struct iep *iep);
 #endif
