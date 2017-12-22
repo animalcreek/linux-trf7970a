@@ -30,4 +30,4 @@ obj-$(CONFIG_TI_KEYSTONE_NETCP_SA) += keystone_netcp_sa.o
 keystone_netcp_sa-y := netcp_sa.o
 
 obj-$(CONFIG_TI_PRUETH) += ti_prueth.o
-ti_prueth-y := prueth.o iep.o
+ti_prueth-y := prueth.o iep.o pruss_node_tbl.o
