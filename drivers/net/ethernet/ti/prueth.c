@@ -1786,6 +1786,7 @@ static enum hrtimer_restart prueth_red_table_timer(struct hrtimer *timer)
 	struct prueth *prueth = container_of(timer, struct prueth,
 					     tbl_check_timer);
 	void __iomem *dram1 = prueth->mem[PRUETH_MEM_DRAM1].va;
+	unsigned long flags;
 
 	hrtimer_forward_now(timer, ktime_set(0, prueth->tbl_check_period));
 	if (prueth->emac_configured !=
@@ -1793,7 +1794,10 @@ static enum hrtimer_restart prueth_red_table_timer(struct hrtimer *timer)
 		return HRTIMER_RESTART;
 
 	if (prueth->node_table_clear) {
-		prueth->tbl_check_mask |= HOST_TIMER_NODE_TABLE_CLEAR_BIT;
+		spin_lock_irqsave(&prueth->nt_lock, flags);
+		node_table_init(prueth);
+		spin_unlock_irqrestore(&prueth->nt_lock, flags);
+
 		prueth->node_table_clear = 0;
 	} else {
 		prueth->tbl_check_mask &= ~HOST_TIMER_NODE_TABLE_CLEAR_BIT;
