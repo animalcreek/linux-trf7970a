@@ -16,7 +16,11 @@
 #ifndef __NET_TI_PRUETH_H
 #define __NET_TI_PRUETH_H
 
+#include <linux/hrtimer.h>
+#include <linux/kthread.h>
+#include <linux/pruss.h>
 #include "icss_switch.h"
+#include "icss_time_sync.h"
 
 /**
  * struct prueth_queue_desc - Queue descriptor
@@ -84,6 +88,7 @@ struct prueth_col_tx_context_info {
  * @length: length of packet
  * @broadcast: this packet is a broadcast packet
  * @error: this packet has an error
+ * @sv_frame: this packet is a supper frame
  */
 struct prueth_packet_info {
 	bool start_offset;
@@ -92,6 +97,8 @@ struct prueth_packet_info {
 	unsigned int length;
 	bool broadcast;
 	bool error;
+	bool sv_frame;
+	bool lookup_success;
 	u32 bd; /* +++WMK: dbg only: original bd */
 };
 
@@ -571,7 +578,15 @@ struct prueth {
 	struct dentry *dd_file;
 	struct dentry *tr_file;
 	struct dentry *error_stats_file;
+	struct dentry *new_nt_index;
+	struct dentry *new_nt_bins;
 #endif
+	struct node_tbl	*nt;
+	struct nt_queue_t *mac_queue;
+	struct kthread_worker *nt_kworker;
+	struct kthread_work    nt_work;
+	u32		rem_cnt;
+	spinlock_t	nt_lock;
 };
 
 #endif /* __NET_TI_PRUETH_H */

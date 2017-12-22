@@ -244,6 +244,8 @@
 #define NODE_TABLE_LAST_ENTRY             0x2fC0 /* last not count guard */
 #define NODE_TABLE_END                    0x2fE0
 
+#define NODE_TABLE_NEW			  0x3000
+
 #define NT_REM_NODE_TYPE_MASK     0x1F
 #define NT_REM_NODE_TYPE_SHIFT    0x00
 
