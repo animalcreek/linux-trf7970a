@@ -1,0 +1,15 @@
+Create local branch
+
+The below commit is used for this local branch and is the one used by
+this sdk:
+a75d8e93056181d512f6c818e8627bd4554aaf92.
+
+To reduce the size of the SDK installer only a portion of the git commit
+history has been preserved. Also links to remote branches and tags do
+not exist in this copy of the repository.
+To fix this please run the unshallow-repositories.sh
+script located in the sdk's bin directory
+
+The script may take several minutes but you will then have a full copy of
+the git repository including its entire git history.
+
